@@ -49,7 +49,19 @@ struct RecommendationEngine: Sendable {
 
             for action in topSlowActions {
                 let duration = String(format: "%.1f", action.durationMS)
-                recommendations.append("   • \(action.fullName): \(duration)ms - move work to background or break into smaller actions")
+
+                // TCA-specific recommendations based on action patterns
+                if action.actionName.contains("Effect") || action.actionName.contains("effect") {
+                    recommendations.append("   • \(action.fullName): \(duration)ms - Consider using @Dependency for heavy effects or break into smaller publishers")
+                } else if action.actionName.contains("reader") || action.actionName.contains("load") {
+                    recommendations.append("   • \(action.fullName): \(duration)ms - Consider pagination, caching, or using async/await with cancellation")
+                } else if action.actionName.contains("selection") || action.actionName.contains("change") {
+                    recommendations.append("   • \(action.fullName): \(duration)ms - Consider debouncing frequent state changes or using .debounce operator")
+                } else if action.actionName.contains("inspector") || action.actionName.contains("detail") {
+                    recommendations.append("   • \(action.fullName): \(duration)ms - Consider lazy loading details or using derived state")
+                } else {
+                    recommendations.append("   • \(action.fullName): \(duration)ms - Consider breaking action into smaller, focused reducers")
+                }
             }
         }
 
@@ -87,7 +99,17 @@ struct RecommendationEngine: Sendable {
 
             for effect in Array(longEffects.prefix(2)) {
                 let duration = String(format: "%.0f", effect.durationMS)
-                recommendations.append("   • \(effect.name): \(duration)ms - monitor for potential cancellation issues")
+
+                // TCA-specific effect recommendations
+                if effect.name.contains("load") || effect.name.contains("fetch") {
+                    recommendations.append("   • \(effect.name): \(duration)ms - Consider implementing caching or background refresh with @Dependency")
+                } else if effect.name.contains("process") || effect.name.contains("compute") {
+                    recommendations.append("   • \(effect.name): \(duration)ms - Consider moving to background queue or using .receive(on:)")
+                } else if effect.name.contains("save") || effect.name.contains("write") {
+                    recommendations.append("   • \(effect.name): \(duration)ms - Consider batching writes or using async persistence layer")
+                } else {
+                    recommendations.append("   • \(effect.name): \(duration)ms - Monitor for potential cancellation issues and add .cancellable()")
+                }
             }
         }
 

@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-struct History: ParsableCommand {
+struct History: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "List and search saved TCA analyses",
         discussion: """
@@ -60,7 +60,7 @@ struct History: ParsableCommand {
     )
     var verbose: Bool = false
 
-    func run() async throws {
+    mutating func run() async throws {
         guard #available(macOS 14, *) else {
             throw TCATraceError.storageError("smith-tca-trace requires macOS 14+")
         }

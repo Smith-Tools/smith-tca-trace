@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-struct Delete: ParsableCommand {
+struct Delete: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Delete saved TCA analyses",
         discussion: """
@@ -40,7 +40,7 @@ struct Delete: ParsableCommand {
     )
     var verbose: Bool = false
 
-    func run() async throws {
+    mutating func run() async throws {
         guard #available(macOS 14, *) else {
             throw TCATraceError.storageError("smith-tca-trace requires macOS 14+")
         }

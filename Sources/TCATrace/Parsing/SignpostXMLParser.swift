@@ -9,7 +9,14 @@ struct SignpostXMLParser: Sendable {
             throw TCATraceError.parsingError("Unable to convert XML data to string")
         }
 
-        return try parse(xmlString: xmlString)
+        // First try lightweight line-based parsing (older xctrace export style)
+        let lineParsed = try parse(xmlString: xmlString)
+        if !lineParsed.isEmpty {
+            return lineParsed
+        }
+
+        // Fallback to structured XML rows (modern xctrace export)
+        return try parseStructuredXML(data: data)
     }
 
     /// Parse XML string to extract signpost events
@@ -60,15 +67,10 @@ struct SignpostXMLParser: Sendable {
         return signposts
     }
 
-    /// Parse more structured XML format (alternative export format)
+    /// Parse structured XML rows produced by xctrace export (table schema)
     func parseStructuredXML(data: Data) throws -> [SignpostEvent] {
-        guard let xmlString = String(data: data, encoding: .utf8) else {
-            throw TCATraceError.parsingError("Unable to convert XML data to string")
-        }
-
-        // This would need proper XML parsing with XMLDocument or similar
-        // For now, we'll fall back to line-based parsing
-        return try parse(xmlString: xmlString)
+        let parser = StructuredSignpostParser()
+        return try parser.parse(data: data)
     }
 
     /// Filter signposts for TCA-related events (works with any app's subsystem)
@@ -94,5 +96,124 @@ struct SignpostXMLParser: Sendable {
 
             return isTCACategory || isTCAName
         }
+    }
+}
+
+// MARK: - Structured XML parser
+
+@available(macOS 14, *)
+private final class StructuredSignpostParser: NSObject, XMLParserDelegate {
+    private var currentElement: String = ""
+    private var currentValue: String = ""
+    private var currentAttributes: [String: String] = [:]
+
+    private var timestampNS: Double?
+    private var subsystem: String?
+    private var category: String?
+    private var name: String?
+    private var identifier: String?
+    private var messageParts: [String] = []
+    private var eventType: SignpostEvent.EventType?
+
+    private var signposts: [SignpostEvent] = []
+    private var valueLookup: [String: String] = [:]
+
+    func parse(data: Data) throws -> [SignpostEvent] {
+        let xmlParser = XMLParser(data: data)
+        xmlParser.delegate = self
+        guard xmlParser.parse() else {
+            throw TCATraceError.parsingError("XML parsing failed: \(xmlParser.parserError?.localizedDescription ?? "unknown error")")
+        }
+        return signposts
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+        currentElement = elementName
+        currentValue = ""
+        currentAttributes = attributeDict
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        currentValue += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        let value = currentValue.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // If element has ref, try to resolve from lookup
+        let resolvedValue: String = {
+            if let ref = currentAttributes["ref"], let v = valueLookup[ref] { return v }
+            return value
+        }()
+
+        // Store id -> value for future ref lookups
+        if let id = currentAttributes["id"], !resolvedValue.isEmpty {
+            valueLookup[id] = resolvedValue
+        }
+
+        switch elementName {
+        case "event-time":
+            if let ns = Double(resolvedValue) {
+                timestampNS = ns
+            }
+        case "subsystem":
+            if !resolvedValue.isEmpty { subsystem = resolvedValue }
+        case "category":
+            if !resolvedValue.isEmpty { category = resolvedValue }
+        case "signpost-name":
+            if !resolvedValue.isEmpty { name = resolvedValue }
+        case "os-log-metadata", "narrative-text", "fixed-decimal", "uint64", "uint64-hex-lowercase", "uint64-hex-upper-case", "int64", "string", "format-string":
+            if !resolvedValue.isEmpty {
+                messageParts.append(resolvedValue)
+            }
+        case "os-signpost-identifier":
+            if !resolvedValue.isEmpty {
+                identifier = resolvedValue
+            }
+        case "event-type":
+            let v = resolvedValue.lowercased()
+            switch v {
+            case "begin": eventType = .begin
+            case "end": eventType = .end
+            default: eventType = .event
+            }
+        case "row":
+            // finalize one signpost row
+            if let tsNS = timestampNS,
+               let subsystem = subsystem,
+               let category = category,
+               let name = name,
+               let type = eventType {
+
+                let timestampSeconds = tsNS / 1_000_000_000.0
+                let message = messageParts.joined(separator: " ")
+                let id = identifier ?? "\(tsNS)_\(name)_\(type.rawValue)"
+
+                let signpost = SignpostEvent(
+                    id: id,
+                    timestamp: timestampSeconds,
+                    subsystem: subsystem,
+                    category: category,
+                    name: name,
+                    message: message,
+                    type: type
+                )
+                signposts.append(signpost)
+            }
+
+            // reset for next row
+            timestampNS = nil
+            subsystem = nil
+            category = nil
+            name = nil
+            identifier = nil
+            messageParts = []
+            eventType = nil
+
+        default:
+            break
+        }
+
+        currentValue = ""
     }
 }

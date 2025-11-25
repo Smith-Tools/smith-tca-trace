@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import AppKit
 
-struct Analyze: ParsableCommand {
+struct Analyze: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Analyze a TCA trace file",
         discussion: """
@@ -99,102 +99,109 @@ struct Analyze: ParsableCommand {
     )
     var verbose: Bool = false
 
-    func run() async throws {
+    mutating func run() async throws {
         guard #available(macOS 14, *) else {
             throw TCATraceError.invalidTraceFile("smith-tca-trace requires macOS 14+")
         }
 
         let traceURL = URL(fileURLWithPath: tracePath)
 
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: tracePath, isDirectory: &isDir) else {
+            throw TCATraceError.fileNotFound(tracePath)
+        }
+
         if verbose {
-            print("🔍 Analyzing trace: \(tracePath)")
-            print("📊 Output mode: \(mode.rawValue)")
-            print("📄 Output format: \(format.rawValue)")
+            print("🚀 Analyzing trace")
+            print("📁 Trace: \(tracePath)")
+            if let size = try? FileManager.default.attributesOfItem(atPath: tracePath)[.size] as? Int64 {
+                print("📊 Size: \(String(format: "%.1f", Double(size)/(1024*1024))) MB (bundle contents may be larger)")
+            } else if isDir.boolValue, let dirSize = try? directorySize(traceURL) {
+                print("📊 Directory size: \(String(format: "%.1f", Double(dirSize)/(1024*1024))) MB")
+            }
+            print("📄 Format: \(format.rawValue) | Mode: \(mode.rawValue)")
+            print("🔎 Filters → feature:\(feature ?? "—") action:\(filter ?? "—") slowOnly:\(slowOnly) minDuration:\(minDuration)")
         }
 
-        do {
-            // Parse the trace
-            let parser = TraceParser(subsystemFilter: subsystem)
-            let parseFilters = ParseFilters(
-                featureName: feature,
-                actionName: filter,
-                minDuration: minDuration,
-                slowActionsOnly: slowOnly
-            )
+        // Build parse filters
+        let filters = ParseFilters(
+            featureName: feature,
+            actionName: filter,
+            minDuration: minDuration,
+            slowActionsOnly: slowOnly
+        )
 
-            if verbose {
-                print("⏳ Parsing trace file...")
-                if let sub = subsystem {
-                    print("🎯 Filtering for subsystem: \(sub)")
-                } else {
-                    print("🎯 Auto-detecting app subsystem from trace...")
-                }
-            }
+        // Parse trace and build analysis
+        let parser = TraceParser(subsystemFilter: subsystem)
+        let parsed = try await parser.parse(traceURL: traceURL, filters: filters)
 
-            let parsedData = try await parser.parse(traceURL: traceURL, filters: parseFilters)
-
-            if verbose {
-                print("✅ Parsed \(parsedData.actions.count) actions, \(parsedData.effects.count) effects, \(parsedData.sharedStateChanges.count) state changes")
-            }
-
-            // Create analysis
-            let analysisName = name ?? traceURL.deletingPathExtension().lastPathComponent
-            let metadata = AnalysisMetadata(
-                name: analysisName,
-                tracePath: tracePath,
-                traceDate: parsedData.traceInfo.duration > 0 ? Date() : nil
-            )
-
-            let analysis = TraceAnalysis(
-                metadata: metadata,
-                actions: parsedData.actions,
-                effects: parsedData.effects,
-                sharedStateChanges: parsedData.sharedStateChanges
-            )
-
-            if verbose {
-                print("📈 Analysis complete:")
-                print("   • Complexity: \(String(format: "%.1f", analysis.complexityScore))/100")
-                print("   • Slow actions: \(analysis.metrics.slowActions)/\(analysis.actions.count)")
-                print("   • Avg duration: \(String(format: "%.1f", analysis.metrics.avgDuration * 1000))ms")
-            }
-
-            // Generate output
-            let outputString = OutputFormatter.format(analysis, mode: mode, format: format)
-
-            if verbose {
-                print("📝 Output generated (\(outputString.count) characters)")
-            }
-
-            // Write output
-            if let outputPath = output {
-                try outputString.write(toFile: outputPath, atomically: true, encoding: .utf8)
-                print("✅ Output written to: \(outputPath)")
-
-                // Open HTML in browser if requested
-                if format == .html && open {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: outputPath))
-                }
-            } else {
-                print(outputString)
-            }
-
-            // Save analysis if requested
-            if save {
-                let storage = try FileStorage()
-                let tagsArray = tags?.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
-
-                if verbose {
-                    print("💾 Saving analysis...")
-                }
-
-                let savedURL = try await storage.save(analysis, name: analysisName, tags: tagsArray)
-                print("✅ Analysis saved to: \(savedURL.path)")
-            }
-
-        } catch {
-            print("❌ Error analyzing trace: \(error.localizedDescription)")
-            throw error
+        if verbose {
+            print("✅ Parsed \(parsed.tcaSignposts.count) TCA signposts, \(parsed.actions.count) actions, \(parsed.effects.count) effects")
         }
+
+        let metadata = AnalysisMetadata(
+            name: name ?? traceURL.deletingPathExtension().lastPathComponent,
+            tracePath: tracePath
+        )
+
+        let analysis = TraceAnalysis(
+            metadata: metadata,
+            actions: parsed.actions,
+            effects: parsed.effects,
+            sharedStateChanges: parsed.sharedStateChanges
+        )
+
+        if verbose {
+            print("📈 Complexity: \(String(format: "%.1f", analysis.complexityScore))/100")
+            print("⏱️  Duration: \(String(format: "%.2f", analysis.duration))s")
+            print("🐌 Slow actions: \(analysis.metrics.slowActions)")
+        }
+
+        // Format output
+        let outputString = OutputFormatter.format(analysis, mode: mode, format: format)
+
+        // Write or print
+        if let outputPath = output {
+            try outputString.write(toFile: outputPath, atomically: true, encoding: .utf8)
+            print("💾 Analysis written to \(outputPath)")
+            if format == .html && open {
+                NSWorkspace.shared.open(URL(fileURLWithPath: outputPath))
+            }
+        } else {
+            print(outputString)
+        }
+
+        // Save for later comparison
+        if save {
+            let tagList = tags?
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty } ?? []
+
+            let storage = try FileStorage()
+            var analysisToStore = analysis
+            analysisToStore.metadata.tags = tagList
+            let savedURL = try await storage.save(analysisToStore, name: name, tags: tagList)
+            print("✅ Saved analysis: \(savedURL.path)")
+        }
+    }
+
+    /// Recursively compute directory size for .trace bundles
+    private func directorySize(_ url: URL) throws -> Int64 {
+        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey]
+        let enumerator = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [.skipsHiddenFiles]
+        )
+
+        var total: Int64 = 0
+        while let fileURL = enumerator?.nextObject() as? URL {
+            let resourceValues = try fileURL.resourceValues(forKeys: resourceKeys)
+            if resourceValues.isRegularFile ?? false, let fileSize = resourceValues.fileSize {
+                total += Int64(fileSize)
+            }
+        }
+        return total
     }
 }

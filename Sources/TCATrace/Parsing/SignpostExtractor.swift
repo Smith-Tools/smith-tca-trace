@@ -30,13 +30,14 @@ struct SignpostExtractor: Sendable {
                 // Single event without begin/end, create action from message if it's a TCA action
                 let actionName = extractActionName(from: signpost.name, message: signpost.message)
                 let featureName = extractFeatureName(from: signpost.name, message: signpost.message)
+                let cleanedMessage = cleanSignpostMessage(signpost.message)
 
                 let action = TCAAction(
                     featureName: featureName,
                     actionName: actionName,
                     timestamp: signpost.timestamp,
                     duration: 0,
-                    metadata: signpost.message.isEmpty ? nil : signpost.message
+                    metadata: cleanedMessage.isEmpty ? nil : cleanedMessage
                 )
                 actions.append(action)
             }
@@ -50,39 +51,32 @@ struct SignpostExtractor: Sendable {
         var effects: [TCAEffect] = []
         var effectMap: [String: SignpostEvent] = [:]
 
-        // Generic TCA effect detection
-        let tcaEffectSignposts = signposts.filter { signpost in
-            isTCAEffectSignpost(signpost)
-        }
+        let tcaEffectSignposts = signposts.filter { isTCAEffectSignpost($0) }
+            .sorted { $0.timestamp < $1.timestamp }
 
-        let sortedSignposts = tcaEffectSignposts.sorted { $0.timestamp < $1.timestamp }
-
-        for signpost in sortedSignposts {
-
+        for signpost in tcaEffectSignposts {
             switch signpost.type {
             case .begin:
                 effectMap[signpost.id] = signpost
             case .end:
                 if let beginEvent = effectMap[signpost.id] {
-                    let effect = TCAEffect(
-                        name: extractEffectName(from: beginEvent.name),
-                        featureName: extractFeatureName(from: beginEvent.name),
-                        startTime: beginEvent.timestamp,
-                        endTime: signpost.timestamp
-                    )
-                    effects.append(effect)
+                    effects.append(makeEffect(from: beginEvent, end: signpost))
                     effectMap.removeValue(forKey: signpost.id)
                 }
             case .event:
-                // Single effect event
-                let effect = TCAEffect(
-                    name: extractEffectName(from: signpost.name),
-                    featureName: extractFeatureName(from: signpost.name),
-                    startTime: signpost.timestamp,
-                    endTime: signpost.timestamp + 0.001 // Small default duration
-                )
-                effects.append(effect)
+                // Treat single Effect / Effect Output events as zero-duration if we never see a begin
+                if let beginEvent = effectMap[signpost.id] {
+                    effects.append(makeEffect(from: beginEvent, end: signpost))
+                    effectMap.removeValue(forKey: signpost.id)
+                } else {
+                    effects.append(makeEffect(from: signpost, end: signpost))
+                }
             }
+        }
+
+        // Flush any dangling begin events with minimal duration
+        for (_, begin) in effectMap {
+            effects.append(makeEffect(from: begin, end: begin))
         }
 
         return effects.sorted { $0.startTime < $1.startTime }
@@ -110,12 +104,22 @@ struct SignpostExtractor: Sendable {
     }
 
     private func createAction(from beginEvent: SignpostEvent, to endEvent: SignpostEvent) -> TCAAction {
+        let cleanedMessage = cleanSignpostMessage(beginEvent.message)
         return TCAAction(
             featureName: extractFeatureName(from: beginEvent.name),
             actionName: extractActionName(from: beginEvent.name),
             timestamp: beginEvent.timestamp,
             duration: endEvent.timestamp - beginEvent.timestamp,
-            metadata: beginEvent.message.isEmpty ? nil : beginEvent.message
+            metadata: cleanedMessage.isEmpty ? nil : cleanedMessage
+        )
+    }
+
+    private func makeEffect(from beginEvent: SignpostEvent, end endEvent: SignpostEvent) -> TCAEffect {
+        TCAEffect(
+            name: extractEffectName(from: beginEvent.name),
+            featureName: extractFeatureName(from: beginEvent.name),
+            startTime: beginEvent.timestamp,
+            endTime: endEvent.timestamp
         )
     }
 
@@ -135,15 +139,41 @@ struct SignpostExtractor: Sendable {
             return normalFeature
         }
 
-        // Extract from message like "[ScrollApp]  ReadingLibraryFeature.Action.sidebarSelectionChanged"
-        if message.contains("Feature") {
-            let pattern = #"(\w+Feature)\."#
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-                if let featureRange = Range(match.range(at: 1), in: message) {
-                    let featureName = String(message[featureRange])
-                    return featureName.replacingOccurrences(of: "Feature", with: "")
-                }
+        // Handle actual message format from trace
+        // "Process %s%s [ReadingLibrary] ReadingLibraryFeature.Action.sidebarSelectionChanged ReadingLibraryFeature.Action.sidebarSelectionChanged"
+
+        // Pattern 1: Extract from bracketed context [ReadingLibrary] FeatureName.Feature
+        let bracketPattern = #"\[([^\]]+)\]"#
+        if let regex = try? NSRegularExpression(pattern: bracketPattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            if let featureRange = Range(match.range(at: 1), in: message) {
+                let contextName = String(message[featureRange])
+                // Remove common prefixes/suffixes
+                let cleaned = contextName
+                    .replacingOccurrences(of: "ScrollApp", with: "")
+                    .replacingOccurrences(of: "Reading", with: "")
+                    .replacingOccurrences(of: "Library", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+                return cleaned.isEmpty ? contextName : cleaned
+            }
+        }
+
+        // Pattern 2: Extract from FeatureNameFeature.Action.actionName pattern
+        let featureActionPattern = #"(\w+Feature)\.Action\.([\w.()]+)"#
+        if let regex = try? NSRegularExpression(pattern: featureActionPattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            if let featureRange = Range(match.range(at: 1), in: message) {
+                let featureName = String(message[featureRange])
+                return featureName.replacingOccurrences(of: "Feature", with: "")
+            }
+        }
+
+        // Pattern 3: Extract from bracketless context
+        let contextPattern = #"(\w+Library)\w*.*?Feature"#
+        if let regex = try? NSRegularExpression(pattern: contextPattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            if let featureRange = Range(match.range(at: 1), in: message) {
+                return String(message[featureRange])
             }
         }
 
@@ -182,16 +212,39 @@ struct SignpostExtractor: Sendable {
             return normalAction
         }
 
-        // Extract from message like "[ScrollApp]  ReadingLibraryFeature.Action.sidebarSelectionChanged"
-        let pattern = #"Feature\.Action\.([\w.()]+)"#
-        if let regex = try? NSRegularExpression(pattern: pattern),
+        // Handle actual message format from trace:
+        // "Process %s%s [ReadingLibrary] ReadingLibraryFeature.Action.sidebarSelectionChanged ReadingLibraryFeature.Action.sidebarSelectionChanged"
+
+        // Pattern 1: Extract from bracketed context [ReadingLibrary] Feature.Action.actionName
+        let bracketPattern = #"\[([^\]]+)\].*?(\w+Feature)\.Action\.([\w.()]+)"#
+        if let regex = try? NSRegularExpression(pattern: bracketPattern),
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-            if let actionRange = Range(match.range(at: 1), in: message) {
+            if let actionRange = Range(match.range(at: 3), in: message) {
                 return String(message[actionRange])
             }
         }
 
-        return normalAction
+        // Pattern 2: Simpler Feature.Action.actionName extraction
+        let pattern = #"(\w+Feature)\.Action\.([\w.()]+)"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            if let actionRange = Range(match.range(at: 2), in: message) {
+                return String(message[actionRange])
+            }
+        }
+
+        // Pattern 3: Handle "Output from" and "Started from" effects
+        if message.contains("Output from") || message.contains("Started from") {
+            let effectPattern = #"(?:Output from|Started from)\s+.*?(\w+Feature)\.Action\.([\w.()]+)"#
+            if let regex = try? NSRegularExpression(pattern: effectPattern),
+               let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+                if let actionRange = Range(match.range(at: 2), in: message) {
+                    return String(message[actionRange])
+                }
+            }
+        }
+
+        return name == "Action" ? "UnknownAction" : normalAction
     }
 
     private func extractEffectName(from name: String) -> String {
@@ -233,6 +286,56 @@ struct SignpostExtractor: Sendable {
         }
 
         return (trimmedMessage, nil, nil)
+    }
+
+    // MARK: - Message Cleaning
+
+    /// Clean up signpost messages for better human readability
+    private func cleanSignpostMessage(_ message: String) -> String {
+        var cleaned = message
+
+        // Remove process patterns
+        cleaned = cleaned.replacingOccurrences(of: "Process %s%s", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "Process %s%s %s", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "Started from %s", with: "Started from")
+        cleaned = cleaned.replacingOccurrences(of: "Output from %s", with: "Output from")
+
+        // Remove duplicated action names
+        let components = cleaned.components(separatedBy: " ")
+        var seenActions = Set<String>()
+        var filteredComponents: [String] = []
+
+        for component in components {
+            if component.contains("Feature.Action") {
+                if !seenActions.contains(component) {
+                    seenActions.insert(component)
+                    filteredComponents.append(component)
+                }
+            } else {
+                filteredComponents.append(component)
+            }
+        }
+
+        let deduplicated = filteredComponents.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+
+        // Extract meaningful context
+        if let bracketContent = extractBracketContent(deduplicated) {
+            return bracketContent
+        }
+
+        return deduplicated
+    }
+
+    /// Extract content from brackets [ReadingLibrary] -> ReadingLibrary
+    private func extractBracketContent(_ message: String) -> String? {
+        let pattern = #"\[([^\]]+)\]"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            if let range = Range(match.range(at: 1), in: message) {
+                return String(message[range])
+            }
+        }
+        return nil
     }
 
     // MARK: - Generic TCA Detection

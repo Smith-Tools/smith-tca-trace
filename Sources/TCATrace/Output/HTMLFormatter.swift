@@ -5,13 +5,13 @@ import Foundation
 struct HTMLFormatter: Sendable {
     /// Generate interactive HTML visualization
     static func generateInteractiveHTML(_ analysis: TraceAnalysis) -> String {
-        let actionsJSON = try! JSONEncoder().encode(analysis.actions.sorted { $0.timestamp < $1.timestamp })
-        let effectsJSON = try! JSONEncoder().encode(analysis.effects.sorted { $0.startTime < $1.startTime })
-        let stateChangesJSON = try! JSONEncoder().encode(analysis.sharedStateChanges.sorted { $0.timestamp < $1.timestamp })
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let analysisJSON = String(data: try! encoder.encode(analysis), encoding: .utf8) ?? "{}"
 
-        let actionsString = String(data: actionsJSON, encoding: .utf8)!
-        let effectsString = String(data: effectsJSON, encoding: .utf8)!
-        let stateChangesString = String(data: stateChangesJSON, encoding: .utf8)!
+        // Try to inline built Svelte bundle; otherwise fall back to legacy static layout.
+        let css = loadResource(name: "bundle", ext: "css")
+        let js = loadResource(name: "bundle", ext: "js")
 
         return """
         <!DOCTYPE html>
@@ -20,296 +20,12 @@ struct HTMLFormatter: Sendable {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>TCA Performance Analysis: \(analysis.metadata.name)</title>
-            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-            <style>
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    margin: 0;
-                    padding: 20px;
-                    background: #f5f5f7;
-                }
-                .container {
-                    max-width: 1200px;
-                    margin: 0 auto;
-                    background: white;
-                    border-radius: 12px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                    overflow: hidden;
-                }
-                .header {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    padding: 30px;
-                    text-align: center;
-                }
-                .header h1 {
-                    margin: 0;
-                    font-size: 2.5em;
-                    font-weight: 600;
-                }
-                .summary {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 20px;
-                    padding: 30px;
-                    background: #fafafa;
-                }
-                .metric {
-                    background: white;
-                    padding: 20px;
-                    border-radius: 8px;
-                    text-align: center;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }
-                .metric-value {
-                    font-size: 2em;
-                    font-weight: bold;
-                    color: #333;
-                }
-                .metric-label {
-                    color: #666;
-                    margin-top: 5px;
-                }
-                .chart-container {
-                    padding: 30px;
-                }
-                .chart {
-                    height: 400px;
-                    margin-bottom: 40px;
-                }
-                .timeline {
-                    height: 300px;
-                    overflow-x: auto;
-                    overflow-y: hidden;
-                    border: 1px solid #ddd;
-                    border-radius: 8px;
-                    position: relative;
-                }
-                .complexity-\(getComplexityClass(analysis.complexityScore)) {
-                    color: \(getComplexityColor(analysis.complexityScore));
-                }
-                .action-item {
-                    position: absolute;
-                    height: 20px;
-                    border-radius: 4px;
-                    background: #667eea;
-                    color: white;
-                    font-size: 10px;
-                    display: flex;
-                    align-items: center;
-                    padding: 0 5px;
-                    cursor: pointer;
-                    white-space: nowrap;
-                }
-                .slow-action {
-                    background: #ff6b6b;
-                }
-                .recommendations {
-                    padding: 30px;
-                    background: #f8f9fa;
-                }
-                .recommendations h3 {
-                    margin-top: 0;
-                    color: #333;
-                }
-                .recommendation {
-                    background: white;
-                    padding: 15px;
-                    border-left: 4px solid #667eea;
-                    margin-bottom: 10px;
-                    border-radius: 4px;
-                }
-            </style>
+            \(css.map { "<style>\($0)</style>" } ?? "")
         </head>
         <body>
-            <div class="container">
-                <div class="header">
-                    <h1>TCA Performance Analysis</h1>
-                    <p>\(analysis.metadata.name)</p>
-                    <div class="metric-value complexity-\(getComplexityClass(analysis.complexityScore))">
-                        Score: \(String(format: "%.0f", analysis.complexityScore))/100
-                    </div>
-                </div>
-
-                <div class="summary">
-                    <div class="metric">
-                        <div class="metric-value">\(analysis.actions.count)</div>
-                        <div class="metric-label">Total Actions</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-value">\(analysis.metrics.slowActions)</div>
-                        <div class="metric-label">Slow Actions</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-value">\(String(format: "%.1f", analysis.metrics.avgDuration * 1000))ms</div>
-                        <div class="metric-label">Avg Duration</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-value">\(String(format: "%.1f", analysis.duration))s</div>
-                        <div class="metric-label">Total Duration</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-value">\(analysis.metrics.features.count)</div>
-                        <div class="metric-label">Features</div>
-                    </div>
-                </div>
-
-                <div class="chart-container">
-                    <div class="chart">
-                        <canvas id="featuresChart"></canvas>
-                    </div>
-                    <div class="chart">
-                        <canvas id="durationChart"></canvas>
-                    </div>
-                    <div class="chart">
-                        <canvas id="complexityGauge"></canvas>
-                    </div>
-                </div>
-
-                <div class="chart-container">
-                    <h3>📊 Timeline View</h3>
-                    <div class="timeline" id="timeline"></div>
-                </div>
-
-                \(generateRecommendationsHTML(analysis.recommendations))
-            </div>
-
-            <script>
-                // Data
-                const actions = \(actionsString);
-                const effects = \(effectsString);
-                const stateChanges = \(stateChangesString);
-                const analysisData = {
-                    totalDuration: \(analysis.duration),
-                    features: \(try! JSONEncoder().encode(analysis.metrics.features)),
-                    complexityScore: \(analysis.complexityScore)
-                };
-
-                // Features Chart
-                const featuresCtx = document.getElementById('featuresChart').getContext('2d');
-                const featuresData = Object.entries(analysisData.features);
-                new Chart(featuresCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: featuresData.map(([name]) => name),
-                        datasets: [{
-                            label: 'Actions',
-                            data: featuresData.map(([, metrics]) => metrics.actionCount),
-                            backgroundColor: '#667eea'
-                        }, {
-                            label: 'Slow Actions',
-                            data: featuresData.map(([, metrics]) => metrics.slowActions),
-                            backgroundColor: '#ff6b6b'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: 'Actions by Feature'
-                            }
-                        }
-                    }
-                });
-
-                // Duration Chart
-                const durationCtx = document.getElementById('durationChart').getContext('2d');
-                const slowActions = actions.filter(a => a.duration > 0.016).sort((a, b) => b.duration - a.duration).slice(0, 10);
-                new Chart(durationCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: slowActions.map(a => a.fullName),
-                        datasets: [{
-                            label: 'Duration (ms)',
-                            data: slowActions.map(a => a.duration * 1000),
-                            backgroundColor: '#ff6b6b'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: 'Top 10 Slowest Actions'
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                title: {
-                                    display: true,
-                                    text: 'Duration (ms)'
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // Complexity Gauge
-                const complexityCtx = document.getElementById('complexityGauge').getContext('2d');
-                const complexityScore = analysisData.complexityScore;
-                new Chart(complexityCtx, {
-                    type: 'doughnut',
-                    data: {
-                        datasets: [{
-                            data: [complexityScore, 100 - complexityScore],
-                            backgroundColor: [getComplexityColor(complexityScore), '#e0e0e0'],
-                            borderWidth: 0
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        cutout: '70%',
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: 'Complexity Score'
-                            },
-                            legend: {
-                                display: false
-                            }
-                        }
-                    }
-                });
-
-                // Timeline Visualization
-                function renderTimeline() {
-                    const timeline = document.getElementById('timeline');
-                    const totalDuration = analysisData.totalDuration;
-                    const timelineWidth = Math.max(1200, totalDuration * 100); // Scale based on duration
-
-                    timeline.style.width = timelineWidth + 'px';
-
-                    actions.forEach((action, index) => {
-                        const left = (action.timestamp / totalDuration) * 100;
-                        const width = Math.max((action.duration / totalDuration) * 100, 0.5); // Minimum width for visibility
-
-                        const actionEl = document.createElement('div');
-                        actionEl.className = 'action-item' + (action.isSlowFor60FPS ? ' slow-action' : '');
-                        actionEl.style.left = left + '%';
-                        actionEl.style.width = width + '%';
-                        actionEl.style.top = (index % 10) * 25 + 'px';
-                        actionEl.textContent = action.actionName;
-                        actionEl.title = `\\(action.fullName): \\(String(format: "%.1f", action.durationMS))ms`;
-
-                        timeline.appendChild(actionEl);
-                    });
-                }
-
-                function getComplexityColor(score) {
-                    if (score < 25) return '#28a745';
-                    if (score < 50) return '#ffc107';
-                    if (score < 75) return '#fd7e14';
-                    return '#dc3545';
-                }
-
-                // Initialize timeline
-                renderTimeline();
-            </script>
+            <div id="app"></div>
+            <script>window.__TCA_ANALYSIS__ = \(analysisJSON);</script>
+            \(js.map { "<script>\($0)</script>" } ?? "<p style='padding:16px;font-family:system-ui'>UI bundle missing. Rebuild UI (npm install; npm run build; npm run copy-ui) then rerun.</p>")
         </body>
         </html>
         """
@@ -434,6 +150,17 @@ struct HTMLFormatter: Sendable {
         case 50..<75: return "#fd7e14"
         default: return "#dc3545"
         }
+    }
+
+    /// Load resource from SPM resources (UI bundle)
+    private static func loadResource(name: String, ext: String) -> String? {
+        #if SWIFT_PACKAGE
+        if let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "UI/dist") ??
+            Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "dist") {
+            return try? String(contentsOf: url)
+        }
+        #endif
+        return nil
     }
 
     private static func generateRecommendationsHTML(_ recommendations: [String]) -> String {

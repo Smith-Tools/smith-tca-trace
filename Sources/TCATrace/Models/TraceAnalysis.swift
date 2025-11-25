@@ -37,19 +37,24 @@ struct TraceAnalysis: Codable, Sendable {
         )
 
         // Generate recommendations if not provided
+        let computedRecommendations: [String]
         if recommendations.isEmpty {
             let engine = RecommendationEngine()
-            let tempAnalysis = TraceAnalysis(
+            let temp = TraceAnalysis(
                 metadata: metadata,
                 actions: actions,
                 effects: effects,
                 sharedStateChanges: sharedStateChanges,
-                recommendations: [] // Temporary to avoid recursion
+                metrics: self.metrics,
+                complexityScore: self.complexityScore,
+                recommendations: [],
+                duration: self.duration
             )
-            self.recommendations = engine.generateRecommendations(for: tempAnalysis)
+            computedRecommendations = engine.generateRecommendations(for: temp)
         } else {
-            self.recommendations = recommendations
+            computedRecommendations = recommendations
         }
+        self.recommendations = computedRecommendations
     }
 
     // Private initializer for when we have all computed values

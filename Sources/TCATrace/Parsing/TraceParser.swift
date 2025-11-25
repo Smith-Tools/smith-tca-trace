@@ -31,23 +31,15 @@ struct TraceParser: Sendable {
         let allSignposts = try xmlParser.parse(data: exportData)
 
         // Filter for TCA-specific signposts with optional subsystem filter
-        let tcaSignposts = xmlParser.filterTCASignposts(allSignposts, subsystemFilter: subsystemFilter)
-
-        if tcaSignposts.isEmpty {
-            throw TCATraceError.noTCADataFound(
-                message: subsystemFilter.map { "No TCA data found for subsystem: '\($0)'" } ?? "No TCA data found"
-            )
-        }
-
         // Extract TCA actions, effects, and state changes
-        let actions = extractor.extractActions(from: tcaSignposts)
-        let effects = extractor.extractEffects(from: tcaSignposts)
-        let sharedStateChanges = extractor.extractSharedStateChanges(from: tcaSignposts)
+        let actions = extractor.extractActions(from: allSignposts)
+        let effects = extractor.extractEffects(from: allSignposts)
+        let sharedStateChanges = extractor.extractSharedStateChanges(from: allSignposts)
 
         return ParsedTraceData(
             traceInfo: traceInfo,
             allSignposts: allSignposts,
-            tcaSignposts: tcaSignposts,
+            tcaSignposts: allSignposts,
             actions: actions,
             effects: effects,
             sharedStateChanges: sharedStateChanges

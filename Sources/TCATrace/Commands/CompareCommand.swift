@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import AppKit
 
-struct Compare: ParsableCommand {
+struct Compare: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Compare two TCA traces to detect regressions and improvements",
         discussion: """
@@ -60,7 +60,7 @@ struct Compare: ParsableCommand {
     )
     var verbose: Bool = false
 
-    func run() async throws {
+    mutating func run() async throws {
         guard #available(macOS 14, *) else {
             throw TCATraceError.invalidTraceFile("smith-tca-trace requires macOS 14+")
         }

@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-struct List: ParsableCommand {
+struct List: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "List saved TCA analyses (alias for history)",
         discussion: """
@@ -21,11 +21,11 @@ struct List: ParsableCommand {
     )
     var detailed: Bool = false
 
-    func run() throws {
+    mutating func run() async throws {
         // Delegate to History command
         var history = History()
         history.limit = limit
         history.detailed = detailed
-        try history.run()
+        try await history.run()
     }
 }

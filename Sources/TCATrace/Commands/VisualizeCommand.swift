@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import AppKit
 
-struct Visualize: ParsableCommand {
+struct Visualize: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Generate HTML visualizations for TCA analyses",
         discussion: """
@@ -43,7 +43,7 @@ struct Visualize: ParsableCommand {
     )
     var verbose: Bool = false
 
-    func run() async throws {
+    mutating func run() async throws {
         guard #available(macOS 14, *) else {
             throw TCATraceError.invalidTraceFile("smith-tca-trace requires macOS 14+")
         }

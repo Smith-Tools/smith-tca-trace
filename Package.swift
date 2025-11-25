@@ -16,9 +16,13 @@ let package = Package(
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
-              swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency"),
-                .enableUpcomingFeature("ExistentialAny")
+            resources: [
+                .copy("Resources/UI/dist")
+            ],
+            swiftSettings: [
+                // Temporarily disable experimental features to test ArgumentParser
+                // .enableExperimentalFeature("StrictConcurrency"),
+                // .enableUpcomingFeature("ExistentialAny")
             ]
         )
     ]

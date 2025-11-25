@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 
 @main
-struct TCATrace: ParsableCommand {
+struct TCATrace: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "TCA performance profiling and analysis tool",
         discussion: """
