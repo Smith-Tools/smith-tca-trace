@@ -7,11 +7,13 @@ struct TraceParser: Sendable {
     private let xmlParser = SignpostXMLParser()
     private let extractor = SignpostExtractor()
     private let subsystemFilter: String?
+    private let includeProfiler: Bool
 
     /// Initialize with optional subsystem filter (e.g., "com.scroll.app", "com.myapp.app")
     /// If not provided, auto-detects from trace or falls back to any subsystem with TCA markers
-    init(subsystemFilter: String? = nil) {
+    init(subsystemFilter: String? = nil, includeProfiler: Bool = true) {
         self.subsystemFilter = subsystemFilter
+        self.includeProfiler = includeProfiler
     }
 
     /// Parse a .trace file and extract TCA data
@@ -24,32 +26,48 @@ struct TraceParser: Sendable {
         // Get basic trace info
         let traceInfo = try await xctraceRunner.getTraceInfo(at: traceURL)
 
-        // Export trace data using xctrace
-        let exportData = try await xctraceRunner.exportTrace(at: traceURL, format: .xml)
+        // Export trace data using xctrace (signposts + optional profiler/syscalls/allocs)
+        let export = try await xctraceRunner.exportTrace(at: traceURL, includeProfiler: includeProfiler)
 
         // Parse XML to extract signpost events
-        let allSignposts = try xmlParser.parse(data: exportData)
+        let allSignposts = try xmlParser.parse(data: export.signposts)
 
         // Filter for TCA-specific signposts with optional subsystem filter
-        // Extract TCA actions, effects, and state changes
-        let actions = extractor.extractActions(from: allSignposts)
-        let effects = extractor.extractEffects(from: allSignposts)
-        let sharedStateChanges = extractor.extractSharedStateChanges(from: allSignposts)
+        let tcaSignposts = xmlParser.filterTCASignposts(allSignposts, subsystemFilter: subsystemFilter)
+
+        // Extract TCA actions, effects, and state changes from filtered signposts
+        var actions = extractor.extractActions(from: tcaSignposts)
+        var effects = extractor.extractEffects(from: tcaSignposts)
+        let sharedStateChanges = extractor.extractSharedStateChanges(from: tcaSignposts)
+
+        // Enrich with multi-instrument data if available
+        if includeProfiler {
+            InstrumentEnrichmentService.enrich(
+                actions: &actions,
+                effects: &effects,
+                profilerData: export.timeProfiler,
+                syscallData: export.syscalls,
+                allocationData: export.allocations
+            )
+        }
 
         return ParsedTraceData(
             traceInfo: traceInfo,
             allSignposts: allSignposts,
-            tcaSignposts: allSignposts,
+            tcaSignposts: tcaSignposts,
             actions: actions,
             effects: effects,
-            sharedStateChanges: sharedStateChanges
+            sharedStateChanges: sharedStateChanges,
+            timeProfilerXML: export.timeProfiler,
+            syscallsXML: export.syscalls,
+            allocationsXML: export.allocations
         )
     }
 
     /// Quick parse - only actions, for performance analysis
     func parseActions(traceURL: URL) async throws -> [TCAAction] {
-        let data = try await xctraceRunner.exportTrace(at: traceURL, format: .xml)
-        let signposts = try xmlParser.parse(data: data)
+        let data = try await xctraceRunner.exportTrace(at: traceURL, includeProfiler: false)
+        let signposts = try xmlParser.parse(data: data.signposts)
         let tcaSignposts = xmlParser.filterTCASignposts(signposts, subsystemFilter: subsystemFilter)
 
         if tcaSignposts.isEmpty {
@@ -95,6 +113,10 @@ struct ParsedTraceData: Sendable {
     var actions: [TCAAction]
     var effects: [TCAEffect]
     var sharedStateChanges: [SharedStateChange]
+    // Optional profiler data (raw XML) for future enrichment
+    var timeProfilerXML: Data? = nil
+    var syscallsXML: Data? = nil
+    var allocationsXML: Data? = nil
 
     var duration: Double {
         actions.map(\.timestamp).max() ?? 0

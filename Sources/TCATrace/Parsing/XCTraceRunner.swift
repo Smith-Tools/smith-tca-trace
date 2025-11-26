@@ -9,58 +9,67 @@ struct XCTraceRunner: Sendable {
         case json
     }
 
-    /// Export trace data using xctrace
+    struct ExportResult {
+        let signposts: Data
+        let timeProfiler: Data?
+        let syscalls: Data?
+        let allocations: Data?
+    }
+
+    /// Export multiple tables from the trace: signposts (always), and optionally time profiler, syscalls, allocations.
     func exportTrace(
         at tracePath: URL,
-        format: ExportFormat = .xml,
-        xpath: String? = nil
-    ) async throws -> Data {
-        let tempOutput = FileManager.default.temporaryDirectory
-            .appendingPathComponent("xctrace_export_\(UUID().uuidString).\(format.rawValue)")
+        includeProfiler: Bool = true
+    ) async throws -> ExportResult {
+        func runExport(xpath: String) throws -> Data {
+            let tempOutput = FileManager.default.temporaryDirectory
+                .appendingPathComponent("xctrace_export_\(UUID().uuidString).xml")
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+            process.arguments = [
+                "xctrace", "export",
+                "--input", tracePath.path,
+                "--output", tempOutput.path,
+                "--xpath", xpath
+            ]
 
-        var arguments = [
-            "xctrace", "export",
-            "--input", tracePath.path,
-            "--output", tempOutput.path
-        ]
+            let pipe = Pipe()
+            process.standardError = pipe
 
-        // Use XPath to filter for signpost data
-        if let xpath = xpath {
-            arguments.append("--xpath")
-            arguments.append(xpath)
-        } else {
-            // Default XPath for signposts
-            arguments.append("--xpath")
-            arguments.append("/trace-toc/run/data/table[@schema='os-signpost']")
+            try process.run()
+            process.waitUntilExit()
+
+            let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
+            if !errorData.isEmpty {
+                let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown xctrace error"
+                print("xctrace stderr: \(errorMessage)")
+            }
+
+            guard process.terminationStatus == 0 else {
+                throw TCATraceError.xctraceExportFailed(process.terminationStatus)
+            }
+
+            let data = try Data(contentsOf: tempOutput)
+            try? FileManager.default.removeItem(at: tempOutput)
+            return data
         }
 
-        process.arguments = arguments
+        let signposts = try runExport(xpath: "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"os-signpost\"]")
 
-        let pipe = Pipe()
-        process.standardError = pipe
+        var profiler: Data? = nil
+        var syscalls: Data? = nil
+        var allocs: Data? = nil
 
-        try process.run()
-        process.waitUntilExit()
-
-        let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
-        if !errorData.isEmpty {
-            let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown xctrace error"
-            print("xctrace stderr: \(errorMessage)")
+        if includeProfiler {
+            // Correct schema names for Instruments 26.1
+            profiler = try? runExport(xpath: "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"time-sample\"]")
+            syscalls = try? runExport(xpath: "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"syscall\"]")
+            // For allocations, use time-profile schema which contains heap allocation data
+            allocs = try? runExport(xpath: "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"time-profile\"]")
         }
 
-        guard process.terminationStatus == 0 else {
-            throw TCATraceError.xctraceExportFailed(process.terminationStatus)
-        }
-
-        let data = try Data(contentsOf: tempOutput)
-
-        // Clean up temp file
-        try? FileManager.default.removeItem(at: tempOutput)
-
-        return data
+        return ExportResult(signposts: signposts, timeProfiler: profiler, syscalls: syscalls, allocations: allocs)
     }
 
     /// Get trace information

@@ -115,9 +115,13 @@ struct SignpostExtractor: Sendable {
     }
 
     private func makeEffect(from beginEvent: SignpostEvent, end endEvent: SignpostEvent) -> TCAEffect {
-        TCAEffect(
-            name: extractEffectName(from: beginEvent.name),
-            featureName: extractFeatureName(from: beginEvent.name),
+        let source = parseEffectSource(beginEvent.message)
+        let feature = source.feature ?? extractFeatureName(from: beginEvent.name)
+        let action = source.action ?? extractEffectName(from: beginEvent.name)
+
+        return TCAEffect(
+            name: action,
+            featureName: feature,
             startTime: beginEvent.timestamp,
             endTime: endEvent.timestamp
         )
@@ -133,51 +137,47 @@ struct SignpostExtractor: Sendable {
     }
 
     private func extractFeatureName(from name: String, message: String) -> String {
-        // First try normal extraction
+        // If name is generic, prioritize extracting from message
+        if name == "Action" || name == "Effect" || name == "Effect Output" {
+            // Handle actual message format from trace:
+            // "[ReadingLibrary] ReadingLibraryFeature.Action.onAppear"
+            // "Started from ReadingLibraryFeature.Action.reader(.task)"
+
+            // Pattern 1: Extract from bracketed context [FeatureName]
+            let bracketPattern = #"\[([^\]]+)\]"#
+            if let regex = try? NSRegularExpression(pattern: bracketPattern),
+               let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+                if let featureRange = Range(match.range(at: 1), in: message) {
+                    let contextName = String(message[featureRange])
+                    // Clean up known non-feature prefixes, but keep the actual feature name
+                    if contextName.contains("Library") {
+                        // Keep "ReadingLibrary" style names, just return as-is
+                        return contextName.trimmingCharacters(in: .whitespaces)
+                    } else if contextName != "ScrollApp" {
+                        // For other bracketed names, use as-is
+                        return contextName.trimmingCharacters(in: .whitespaces)
+                    }
+                }
+            }
+
+            // Pattern 2: Extract from FeatureNameFeature.Action.actionName pattern
+            let featureActionPattern = #"(\w+Feature)\.Action\.([\w.()]+)"#
+            if let regex = try? NSRegularExpression(pattern: featureActionPattern),
+               let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+                if let featureRange = Range(match.range(at: 1), in: message) {
+                    let featureName = String(message[featureRange])
+                    return featureName.replacingOccurrences(of: "Feature", with: "")
+                }
+            }
+        }
+
+        // Fallback to normal extraction
         let normalFeature = extractFeatureName(from: name)
         if normalFeature != name {
             return normalFeature
         }
 
-        // Handle actual message format from trace
-        // "Process %s%s [ReadingLibrary] ReadingLibraryFeature.Action.sidebarSelectionChanged ReadingLibraryFeature.Action.sidebarSelectionChanged"
-
-        // Pattern 1: Extract from bracketed context [ReadingLibrary] FeatureName.Feature
-        let bracketPattern = #"\[([^\]]+)\]"#
-        if let regex = try? NSRegularExpression(pattern: bracketPattern),
-           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-            if let featureRange = Range(match.range(at: 1), in: message) {
-                let contextName = String(message[featureRange])
-                // Remove common prefixes/suffixes
-                let cleaned = contextName
-                    .replacingOccurrences(of: "ScrollApp", with: "")
-                    .replacingOccurrences(of: "Reading", with: "")
-                    .replacingOccurrences(of: "Library", with: "")
-                    .trimmingCharacters(in: .whitespaces)
-                return cleaned.isEmpty ? contextName : cleaned
-            }
-        }
-
-        // Pattern 2: Extract from FeatureNameFeature.Action.actionName pattern
-        let featureActionPattern = #"(\w+Feature)\.Action\.([\w.()]+)"#
-        if let regex = try? NSRegularExpression(pattern: featureActionPattern),
-           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-            if let featureRange = Range(match.range(at: 1), in: message) {
-                let featureName = String(message[featureRange])
-                return featureName.replacingOccurrences(of: "Feature", with: "")
-            }
-        }
-
-        // Pattern 3: Extract from bracketless context
-        let contextPattern = #"(\w+Library)\w*.*?Feature"#
-        if let regex = try? NSRegularExpression(pattern: contextPattern),
-           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-            if let featureRange = Range(match.range(at: 1), in: message) {
-                return String(message[featureRange])
-            }
-        }
-
-        return name == "Action" ? "Unknown" : normalFeature
+        return "Unknown"
     }
 
     private func extractActionName(from name: String) -> String {
@@ -206,42 +206,47 @@ struct SignpostExtractor: Sendable {
     }
 
     private func extractActionName(from name: String, message: String) -> String {
-        // First try normal extraction
-        let normalAction = extractActionName(from: name)
-        if normalAction != name && normalAction != "TCAAction" {
-            return normalAction
-        }
+        // If name is generic "Action", prioritize extracting from message
+        if name == "Action" || name == "Effect" || name == "Effect Output" {
+            // Handle actual message format from trace:
+            // "[ReadingLibrary] ReadingLibraryFeature.Action.onAppear"
+            // "Started from ReadingLibraryFeature.Action.reader(.task)"
+            // "Output from ReadingLibraryFeature.Action.onAppear"
 
-        // Handle actual message format from trace:
-        // "Process %s%s [ReadingLibrary] ReadingLibraryFeature.Action.sidebarSelectionChanged ReadingLibraryFeature.Action.sidebarSelectionChanged"
-
-        // Pattern 1: Extract from bracketed context [ReadingLibrary] Feature.Action.actionName
-        let bracketPattern = #"\[([^\]]+)\].*?(\w+Feature)\.Action\.([\w.()]+)"#
-        if let regex = try? NSRegularExpression(pattern: bracketPattern),
-           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-            if let actionRange = Range(match.range(at: 3), in: message) {
-                return String(message[actionRange])
+            // Pattern 1: Extract from bracketed context [Feature] Feature.Action.actionName
+            let bracketPattern = #"\[([^\]]+)\].*?(\w+Feature)\.Action\.([\w.()]+)"#
+            if let regex = try? NSRegularExpression(pattern: bracketPattern),
+               let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+                if let actionRange = Range(match.range(at: 3), in: message) {
+                    return String(message[actionRange])
+                }
             }
-        }
 
-        // Pattern 2: Simpler Feature.Action.actionName extraction
-        let pattern = #"(\w+Feature)\.Action\.([\w.()]+)"#
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-            if let actionRange = Range(match.range(at: 2), in: message) {
-                return String(message[actionRange])
-            }
-        }
-
-        // Pattern 3: Handle "Output from" and "Started from" effects
-        if message.contains("Output from") || message.contains("Started from") {
-            let effectPattern = #"(?:Output from|Started from)\s+.*?(\w+Feature)\.Action\.([\w.()]+)"#
-            if let regex = try? NSRegularExpression(pattern: effectPattern),
+            // Pattern 2: Direct Feature.Action.actionName extraction (when no brackets)
+            let pattern = #"(\w+Feature)\.Action\.([\w.()]+)"#
+            if let regex = try? NSRegularExpression(pattern: pattern),
                let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
                 if let actionRange = Range(match.range(at: 2), in: message) {
                     return String(message[actionRange])
                 }
             }
+
+            // Pattern 3: Handle "Output from" and "Started from" effects
+            if message.contains("Output from") || message.contains("Started from") {
+                let effectPattern = #"(?:Output from|Started from)\s+.*?(\w+Feature)\.Action\.([\w.()]+)"#
+                if let regex = try? NSRegularExpression(pattern: effectPattern),
+                   let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+                    if let actionRange = Range(match.range(at: 2), in: message) {
+                        return String(message[actionRange])
+                    }
+                }
+            }
+        }
+
+        // Fallback to normal extraction
+        let normalAction = extractActionName(from: name)
+        if normalAction != name && normalAction != "TCAAction" {
+            return normalAction
         }
 
         return name == "Action" ? "UnknownAction" : normalAction
@@ -255,6 +260,21 @@ struct SignpostExtractor: Sendable {
             return components.last ?? name
         }
         return name
+    }
+
+    /// Parse effect source from message like "Started from ReadingLibraryFeature.Action.reader(.task)"
+    private func parseEffectSource(_ message: String) -> (feature: String?, action: String?) {
+        let pattern = #"(\w+)Feature\.Action\.([\w.()]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return (nil, nil) }
+        let range = NSRange(message.startIndex..., in: message)
+        guard let match = regex.firstMatch(in: message, range: range),
+              let featureRange = Range(match.range(at: 1), in: message),
+              let actionRange = Range(match.range(at: 2), in: message) else {
+            return (nil, nil)
+        }
+        let feature = String(message[featureRange]).replacingOccurrences(of: "Feature", with: "")
+        let action = String(message[actionRange])
+        return (feature, action)
     }
 
     private func parseStateMessage(_ message: String) -> (property: String, oldValue: String?, newValue: String?) {
