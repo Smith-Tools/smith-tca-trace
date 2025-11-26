@@ -1,38 +1,72 @@
 ---
 name: smith-tca-trace
-description: TCA performance profiling and analysis. Automatically triggers for:
-             TCA performance, signposts, Instruments traces, slow reducers,
-             effect lifecycle, action timing, TCA optimization
+description: TCA performance profiling and analysis with automatic trace discovery.
+             Automatically triggers for: TCA performance, signposts, Instruments traces,
+             slow reducers, effect lifecycle, action timing, TCA optimization
 allowed-tools: [Bash, Read, Write]
 executables: ["~/.local/bin/smith-tca-trace", "./Scripts/smith-tca-trace", "smith-tca-trace"]
 ---
 
 # TCA Performance Analysis
 
-Analyzes The Composable Architecture (TCA) applications using Instruments traces.
+Analyzes The Composable Architecture (TCA) applications using Instruments traces
+from the canonical per-project location: `<project-root>/.instruments/traces/`
+
+## Canonical Trace Location
+
+**smith-tca-trace automatically discovers traces** from the standard per-project location:
+
+```
+<project-root>/.instruments/traces/
+```
+
+The tool uses intelligent fallback priority to find traces:
+
+1. **Explicit path** - If user provides `smith-tca-trace analyze /path/to/trace.trace`
+2. **Project discovery** - Walks up directory tree to find `Package.swift`, `.xcodeproj`, or `.git`
+3. **Canonical location** - Looks in `.instruments/traces/` subdirectory
+4. **Smart selection** (in order):
+   - `current.trace` (explicit current marker)
+   - `baseline.trace` (reference baseline)
+   - Most recent trace by modification time
+   - Only trace if just one exists
+
+This enables **automatic analysis without user intervention** when invoked by Smith agent.
 
 ## Automatic Usage
 
 This skill activates when users ask about:
-- "Analyze this Instruments trace"
+- "Analyze my TCA performance"
 - "Why is my TCA reducer slow?"
 - "Profile my TCA app"
 - "Find performance bottlenecks in TCA"
+- "Compare performance before/after optimization"
 
 ## Commands
 
-**Analyze trace** (AI-optimized by default):
+**Auto-discover and analyze trace** (from canonical location):
 ```bash
-./scripts/tca-trace analyze /path/to/trace.trace
-# Returns: Compact JSON (~200-500 tokens vs 2000+ for full trace)
+smith-tca-trace analyze
+# Automatically finds and analyzes latest/current trace
+```
 
-Get full details (when AI needs complete data):
-./scripts/tca-trace analyze /path/to/trace.trace --mode agent
-# Returns: Full JSON (use sparingly - large context)
+**Analyze specific trace**:
+```bash
+smith-tca-trace analyze /path/to/trace.trace
+# Uses explicit path (bypasses discovery)
+```
 
-Compare traces (regression detection):
-./scripts/tca-trace compare baseline.trace current.trace
-# Returns: Compact comparison with regressions/improvements only
+**Compare traces** (regression detection):
+```bash
+smith-tca-trace compare baseline.trace current.trace
+# Analyzes performance differences
+```
+
+**Output modes**:
+```bash
+smith-tca-trace analyze --mode compact   # Token-optimized (default)
+smith-tca-trace analyze --mode agent     # Full data for AI analysis
+smith-tca-trace analyze --mode user      # Human-friendly markdown
 ```
 
 ## Progressive Disclosure Pattern (AI Workflow)
@@ -64,6 +98,54 @@ tca-trace analyze trace.trace --mode agent
   - ~2000-5000 tokens for typical trace
 - **--mode user**: Human-friendly markdown with emoji
   - Formatted for terminal display
+
+## Setup: Recording Traces
+
+**Option 1: Using Instruments GUI**
+```bash
+1. Open Instruments in Xcode
+2. Select "System Trace" or "Time Profiler"
+3. Profile your TCA app
+4. Save trace to: <project-root>/.instruments/traces/current.trace
+5. Then run: smith-tca-trace analyze
+```
+
+**Option 2: Using Instruments CLI** (for automation)
+```bash
+mkdir -p .instruments/traces
+instruments -t 'System Trace' \
+  -o .instruments/traces/$(date +%Y%m%d_%H%M%S).trace \
+  -D YourApp
+smith-tca-trace analyze
+```
+
+**Option 3: CI/CD Pipeline**
+```yaml
+# GitHub Actions example
+- name: Profile Performance
+  run: |
+    instruments -t 'System Trace' \
+      -o .instruments/traces/ci_$(date +%s).trace \
+      -D MyApp
+
+- name: Analyze with smith-tca-trace
+  run: smith-tca-trace analyze
+```
+
+## Gitignore Configuration
+
+Add to your `.gitignore` to exclude large trace files:
+```
+# Instruments profiles (large binary files)
+.instruments/traces/
+```
+
+You may want to keep baseline traces in source control:
+```
+# Alternative: commit baseline, exclude current
+!.instruments/traces/baseline.trace
+.instruments/traces/*.trace
+```
 
 ## Technical Details
 

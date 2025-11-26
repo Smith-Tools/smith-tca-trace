@@ -16,8 +16,8 @@ struct Analyze: AsyncParsableCommand {
         """
     )
 
-    @Argument(help: "Path to .trace file to analyze")
-    var tracePath: String
+    @Argument(help: "Path to .trace file to analyze (optional, auto-discovers from .instruments/traces)")
+    var tracePath: String?
 
     @Option(
         name: [.short, .long],
@@ -99,25 +99,36 @@ struct Analyze: AsyncParsableCommand {
     )
     var verbose: Bool = false
 
+    @Flag(
+        name: .long,
+        help: "Show only summary (ultra-compact, ~50 tokens)"
+    )
+    var summaryOnly: Bool = false
+
+    @Flag(
+        name: .long,
+        help: "Suppress summary section from output"
+    )
+    var noSummary: Bool = false
+
     mutating func run() async throws {
         guard #available(macOS 14, *) else {
             throw TCATraceError.invalidTraceFile("smith-tca-trace requires macOS 14+")
         }
 
-        let traceURL = URL(fileURLWithPath: tracePath)
-
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: tracePath, isDirectory: &isDir) else {
-            throw TCATraceError.fileNotFound(tracePath)
-        }
+        // Use ProjectRootFinder to resolve trace location with fallback priority
+        let traceURL = try ProjectRootFinder.findTrace(explicitPath: tracePath)
 
         if verbose {
             print("🚀 Analyzing trace")
-            print("📁 Trace: \(tracePath)")
-            if let size = try? FileManager.default.attributesOfItem(atPath: tracePath)[.size] as? Int64 {
+            print("📁 Trace: \(traceURL.path)")
+            if let size = try? FileManager.default.attributesOfItem(atPath: traceURL.path)[.size] as? Int64 {
                 print("📊 Size: \(String(format: "%.1f", Double(size)/(1024*1024))) MB (bundle contents may be larger)")
-            } else if isDir.boolValue, let dirSize = try? directorySize(traceURL) {
-                print("📊 Directory size: \(String(format: "%.1f", Double(dirSize)/(1024*1024))) MB")
+            } else {
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: traceURL.path, isDirectory: &isDir), isDir.boolValue, let dirSize = try? directorySize(traceURL) {
+                    print("📊 Directory size: \(String(format: "%.1f", Double(dirSize)/(1024*1024))) MB")
+                }
             }
             print("📄 Format: \(format.rawValue) | Mode: \(mode.rawValue)")
             print("🔎 Filters → feature:\(feature ?? "—") action:\(filter ?? "—") slowOnly:\(slowOnly) minDuration:\(minDuration)")
@@ -141,7 +152,7 @@ struct Analyze: AsyncParsableCommand {
 
         let metadata = AnalysisMetadata(
             name: name ?? traceURL.deletingPathExtension().lastPathComponent,
-            tracePath: tracePath
+            tracePath: traceURL.path
         )
 
         let analysis = TraceAnalysis(
@@ -158,11 +169,11 @@ struct Analyze: AsyncParsableCommand {
         }
 
         // Format output
-        let outputString = OutputFormatter.format(analysis, mode: mode, format: format)
+        let outputString = OutputFormatter.format(analysis, mode: mode, format: format, summaryOnly: summaryOnly, noSummary: noSummary)
 
         // Write or print
         if let outputPath = output {
-            try outputString.write(toFile: outputPath, atomically: true, encoding: .utf8)
+            try outputString.write(toFile: outputPath, atomically: true, encoding: String.Encoding.utf8)
             print("💾 Analysis written to \(outputPath)")
             if format == .html && open {
                 NSWorkspace.shared.open(URL(fileURLWithPath: outputPath))

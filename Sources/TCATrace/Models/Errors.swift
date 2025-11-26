@@ -9,6 +9,8 @@ enum TCATraceError: LocalizedError, Sendable {
     case noTCADataFound(message: String? = nil)
     case storageError(String)
     case comparisonError(String)
+    case noProjectFound(message: String)
+    case noTracesFound(message: String)
 
     var errorDescription: String? {
         switch self {
@@ -26,6 +28,10 @@ enum TCATraceError: LocalizedError, Sendable {
             return "Storage error: \(message)"
         case .comparisonError(let message):
             return "Comparison error: \(message)"
+        case .noProjectFound(let message):
+            return message
+        case .noTracesFound(let message):
+            return message
         }
     }
 }
