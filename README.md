@@ -1,44 +1,32 @@
 # 🚀 smith-tca-trace
 
-**TCA performance profiling and analysis tool** - The Composable Architecture performance profiler for Apple Instruments traces.
+**TCA performance profiling and analysis tool** - The Composable Architecture performance profiler for Apple Instruments traces with multi-instrument enrichment.
 
 ## 📋 Overview
 
-`smith-tca-trace` is a command-line tool that analyzes The Composable Architecture (TCA) applications using Instruments traces to identify performance bottlenecks, complexity issues, and provide actionable recommendations. It extracts TCA-specific signposts and generates comprehensive performance reports.
+`smith-tca-trace` is a command-line tool that analyzes The Composable Architecture (TCA) applications using Instruments traces to identify performance bottlenecks, complexity issues, and provide actionable recommendations. It extracts TCA-specific signposts and generates comprehensive performance reports with multi-instrument data enrichment.
 
 ### ✨ Key Features
 
 - **🔍 Generic TCA Detection**: Works with any TCA app using Point-Free's signpost instrumentation patterns
-- **📊 Interactive Visualizations**: Modern web dashboard with Chart.js visualizations
+- **📊 Multi-Format Output**: JSON (compact/user/agent), Markdown, and HTML visualization support
 - **🏗️ TCA-Focused Insights**: State mutations, actions, side effects, and dependencies analysis
 - **⚡ Performance Metrics**: Action distribution, effect-to-action ratios, complexity scoring
 - **🎯 Smart Recommendations**: TCA-specific optimization advice (@Dependency, debouncing, caching)
-- **📱 Responsive Design**: Mobile-friendly interface for tablet debugging
-- **🌊 Modern Dashboard**: Dark theme with glassmorphism effects and rich infographics
 - **🔬 Multi-Instrument Enrichment**: CPU profiling, system call analysis, and memory tracking with automatic correlation to TCA actions/effects
+- **💾 Analysis Management**: Save, compare, and manage multiple trace analyses
+- **🎯 Progressive Disclosure**: Token-optimized outputs for AI agents with detailed expansion options
 
 ## 🛠️ Installation
 
-### Prerequisites
-
-- **macOS 14+** (for Instruments integration)
-- **Xcode** (for xctrace tool)
-- **Swift 5.9+**
-
-### Quick Install
+### Homebrew Installation (Recommended)
 
 ```bash
-cd smith-tca-trace
-./Scripts/install.sh
+brew tap Smith-Tools/smith
+brew install smith-tca-trace
 ```
 
-This will:
-1. Build the Swift CLI tool in release mode
-2. Install the executable to `~/.local/bin/tca-trace`
-3. Create the storage directory `~/.tca-trace/analyses`
-4. Optionally deploy the Claude Code skill
-
-### Manual Install (If Script Fails)
+### Manual Installation
 
 ```bash
 # Build from source
@@ -47,44 +35,39 @@ swift build -c release
 
 # Install to PATH
 mkdir -p ~/.local/bin
-cp .build/arm64-apple-macosx/release/smith-tca-trace ~/.local/bin/tca-trace
-chmod +x ~/.local/bin/tca-trace
+cp .build/arm64-apple-macosx/release/smith-tca-trace ~/.local/bin/
+chmod +x ~/.local/bin/smith-tca-trace
 
-# Create storage directory
-mkdir -p ~/.tca-trace/analyses
-
-# Verify installation
-tca-trace --version
+# Add to PATH if needed
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
-### Add to PATH (If Not Using Script)
+### Prerequisites
 
-Add this to your shell profile (`~/.zshrc`, `~/.bash_profile`, etc.):
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Then reload your shell:
-```bash
-source ~/.zshrc  # or ~/.bash_profile
-```
+- **macOS 14+** (for Instruments integration)
+- **Xcode** (for xctrace tool)
+- **Swift 6.0+**
 
 ## 🚀 Quick Start
 
 ### Basic Usage
 
 ```bash
-# Analyze a trace file
+# Analyze a trace file (compact JSON output - optimized for AI agents)
 smith-tca-trace analyze /path/to/trace.trace
 
-# Generate interactive HTML visualization
-smith-tca-trace visualize /path/to/trace.trace --output report.html
+# Generate human-friendly report
+smith-tca-trace analyze /path/to/trace.trace --mode user
+
+# Generate HTML visualization
+smith-tca-trace visualize /path/to/trace.trace --open
 
 # Compare two traces
 smith-tca-trace compare before.trace after.trace
 
-# List available traces
-smith-tca-trace list
+# Save analysis for later comparison
+smith-tca-trace analyze /path/to/trace.trace --save --name "baseline"
 ```
 
 ### Example Workflow
@@ -93,146 +76,131 @@ smith-tca-trace list
 # 1. Record Instruments trace with TCA signposts
 xctrace record --template "Time Profiler" --launch appname.app
 
-# 2. Analyze performance
-tca-trace analyze ~/Library/Developer/Xcode/DerivedData/appname/Build/Products/Debug/appname.app/trace.trace
+# 2. Quick analysis (compact output for AI agents)
+smith-tca-trace analyze trace.trace
 
-# 3. Generate interactive dashboard
-tca-trace visualize trace.trace --output performance-report.html
+# 3. Detailed human-readable analysis
+smith-tca-trace analyze trace.trace --mode user --format markdown
 
-# 4. Open in browser
-open performance-report.html
+# 4. Interactive HTML visualization
+smith-tca-trace visualize trace.trace --open
+
+# 5. Compare against baseline
+smith-tca-trace compare baseline.trace current.trace
 ```
 
 ## 📖 Usage Workflows
 
-### Workflow 1: Quick Terminal Analysis (Compact Output)
+### Workflow 1: Quick Terminal Analysis (Default)
 
-**Scenario**: You have a trace file and want a quick performance summary in your terminal.
-
-```bash
-# Get quick performance summary (default compact mode - ~200 tokens)
-tca-trace analyze MyApp.trace
-
-# Output:
-# 🔍 TCA Trace Analysis
-# ━━━━━━━━━━━━━━━━━━━━━━
-# 📊 Overview:
-#    • Total Actions: 24
-#    • Total Effects: 7
-#    • Complexity Score: 54/100 (Fair)
-#    • Time Range: 3.2s
-#
-# ⚠️ Performance Issues (2):
-#    1. ArticleList.loadArticles: 2341ms (very slow)
-#    2. ArticleDetail.fetchMetadata: 890ms (slow)
-```
-
-**Command**:
-```bash
-tca-trace analyze path/to/trace.trace
-```
-
-### Workflow 2: Detailed Investigation (Full Data)
-
-**Scenario**: You found a performance issue and need detailed information for analysis.
+**Scenario**: You have a trace file and want a quick performance summary.
 
 ```bash
-# Get complete analysis with all details (full JSON - ~3000 tokens)
-tca-trace analyze MyApp.trace --mode agent --format json > analysis.json
+# Default compact mode (~30-40% token reduction for AI agents)
+smith-tca-trace analyze MyApp.trace
 
-# Or get human-readable detailed report
-tca-trace analyze MyApp.trace --mode user --format markdown > analysis.md
+# Output format:
+{
+  "slowActions": [
+    {"feature": "ReadingLibrary", "action": "reader(.task)", "duration": 7462.2}
+  ],
+  "summary": {
+    "totalActions": 128,
+    "complexityScore": 33.1,
+    "avgDuration": 97.9
+  }
+}
 ```
 
-**When to use**: When you need all the details—every action, effect, state change.
+### Workflow 2: Human-Friendly Analysis
 
-### Workflow 3: Interactive Visual Dashboard
+**Scenario**: You need a readable report for documentation or team sharing.
 
-**Scenario**: You want to understand TCA performance visually with charts and timeline.
+```bash
+# Human-friendly markdown output
+smith-tca-trace analyze MyApp.trace --mode user --format markdown > analysis.md
+
+# Human-friendly JSON output
+smith-tca-trace analyze MyApp.trace --mode user --format json > analysis.json
+```
+
+### Workflow 3: Complete Analysis (Agent Mode)
+
+**Scenario**: You need all data for automation or detailed investigation.
+
+```bash
+# Complete structured data for automation
+smith-tca-trace analyze MyApp.trace --mode agent --format json > complete-analysis.json
+
+# Complete analysis with all details (~3000 tokens)
+smith-tca-trace analyze MyApp.trace --mode agent
+```
+
+### Workflow 4: Interactive HTML Visualization
+
+**Scenario**: You want to understand TCA performance visually.
 
 ```bash
 # Generate interactive HTML dashboard
-tca-trace visualize MyApp.trace --output dashboard.html
+smith-tca-trace visualize MyApp.trace --output dashboard.html --open
 
-# Open in browser
-open dashboard.html
+# Generate comparison dashboard
+smith-tca-trace visualize baseline.trace current.trace --type comparison --open
 ```
 
-**Dashboard includes**:
-- Action distribution doughnut chart
-- Effect duration timeline
-- Complexity gauge
-- TCA-specific recommendations
-- Feature performance breakdown
+### Workflow 5: Multi-Instrument Enrichment Analysis
 
-### Workflow 4: Performance Regression Detection
-
-**Scenario**: You've optimized your code and want to verify improvements.
+**Scenario**: You want deep performance insights with CPU, memory, and I/O data.
 
 ```bash
-# Record before optimization
-xctrace record --template "Time Profiler" --launch MyApp.app
-# → saves to: /path/to/before.trace
+# Analysis automatically includes multi-instrument enrichment when available
+smith-tca-trace analyze MyApp.trace --mode user
 
-# Make optimization changes...
-
-# Record after optimization
-xctrace record --template "Time Profiler" --launch MyApp.app
-# → saves to: /path/to/after.trace
-
-# Compare traces
-tca-trace compare before.trace after.trace --output comparison.html
-open comparison.html
+# Example enriched output:
+# - ReadingLibrary.reader(.task): 7462.2ms | CPU: Timer Fired(42%), Wait: kevent | Alloc: +32.0 KB
 ```
 
-**Results show**:
-- Regressions (new slow actions)
-- Improvements (faster actions)
-- Overall complexity change
-- Severity classification
+### Workflow 6: Baseline Management and Regression Detection
 
-### Workflow 5: Feature-Specific Analysis
+**Scenario**: You want to track performance over time and detect regressions.
+
+```bash
+# Save baseline
+smith-tca-trace analyze v1.0.trace --save --name "v1.0-baseline" --tags "production,baseline"
+
+# Save current version
+smith-tca-trace analyze v2.0.trace --save --name "v2.0-current" --tags "current"
+
+# Compare for regressions
+smith-tca-trace compare v1.0-baseline v2.0-current
+
+# List saved analyses
+smith-tca-trace history
+
+# Search for specific analyses
+smith-tca-trace history --tag production
+```
+
+### Workflow 7: Feature-Specific Analysis
 
 **Scenario**: Your app has multiple features and you want to profile just one.
 
 ```bash
-# Analyze only ArticleDetailFeature
-tca-trace analyze MyApp.trace \
-  --feature ArticleDetailFeature \
-  --output detail-feature-analysis.json
+# Analyze only ReadingLibrary feature
+smith-tca-trace analyze MyApp.trace --feature ReadingLibrary
 
-# Or filter by specific action
-tca-trace analyze MyApp.trace \
-  --filter "loadArticle" \
-  --slow-only \
-  --mode user
+# Filter by specific action name
+smith-tca-trace analyze MyApp.trace --filter "loadArticle" --slow-only
+
+# Filter by minimum duration
+smith-tca-trace analyze MyApp.trace --min-duration 0.1  # 100ms minimum
 ```
-
-### Workflow 6: Save Baseline for Regression Testing
-
-**Scenario**: You want to establish a performance baseline and track regressions.
-
-```bash
-# Analyze and save with a name
-tca-trace analyze v1.0-baseline.trace \
-  --save \
-  --name "v1.0-baseline" \
-  --tags "production,baseline"
-
-# Later, compare current against baseline
-tca-trace analyze v2.0-current.trace --compare
-# → automatically compares against last saved baseline
-```
-
----
 
 ## 🧠 Claude Code Integration
 
-### Using smith-tca-trace in Claude Code Sessions
-
 smith-tca-trace is available as a Claude Code skill for TCA performance analysis.
 
-#### Activation Triggers
+### Activation Triggers
 
 The skill automatically activates when you ask about:
 - "Analyze my TCA trace"
@@ -242,270 +210,109 @@ The skill automatically activates when you ask about:
 - "Show me the complexity score"
 - "Detect performance regressions"
 
-#### Example 1: Direct Analysis in Claude Code
+### Usage Examples in Claude Code
 
 ```
 You: "Analyze this TCA trace for me: /path/to/MyApp.trace"
 
-Claude:
-[Activates smith-tca-trace skill]
-
-I'll analyze your TCA trace to identify performance issues.
+Claude: [Activates smith-tca-trace skill]
+smith-tca-trace analyze /path/to/MyApp.trace
 
 🔍 Analysis Results:
 ━━━━━━━━━━━━━━━━━━
 📊 Overview:
-   • Total Actions: 32
-   • Total Effects: 9
-   • Complexity Score: 67/100 (Fair)
-   • Time Range: 4.8s
+   • Total Actions: 128
+   • Slow Actions: 10 (>16ms)
+   • Complexity Score: 33/100 (🟡 Good)
+   • Avg Duration: 97.9ms
 
-⚠️ Performance Issues (3):
-   1. ArticleList.loadArticles: 3456ms (very slow)
-   2. ArticleDetail.downloadMetadata: 1200ms (slow)
-   3. ArticleCache.processImages: 890ms (slow)
+⚠️ Performance Issues:
+   • ReadingLibrary.reader(.task): 7462.2ms | CPU: Timer Fired(42%), Wait: kevent | Alloc: +32.0 KB
+   • ReadingLibrary.reader(.cacheLoaded): 3023.1ms | CPU: Running(85%), Wait: cpu | Alloc: +64.5 KB
 
-✅ Recommendations (2):
-   • Use @Dependency for network client injection (enables mocking)
-   • Add debouncing to searchArticles (currently 45 calls/sec)
+✅ Recommendations:
+   • Investigate timer-heavy code in ReadingLibrary.reader(.task)
+   • Consider caching for ReadingLibrary.reader(.cacheLoaded)
 ```
-
-#### Example 2: Comparing Traces in Claude Code
-
-```
-You: "I optimized my TCA app. Compare before and after."
-
-Claude: "I'll compare your traces to detect improvements and regressions."
-
-tca-trace compare before.trace after.trace --mode agent
-
-Results:
-✅ Improvements (2):
-   • ArticleList.loadArticles: 3456ms → 1200ms (-65%)
-   • ArticleCache.processImages: 890ms → 340ms (-62%)
-
-🔴 Regressions (1):
-   • ArticleDetail.fetchMetadata: 456ms → 780ms (+71%)
-
-Summary:
-   • Complexity Score: 67 → 42 (-37%)
-   • Overall: Good improvements with one regression to investigate
-```
-
-#### Example 3: Detailed Investigation
-
-```
-You: "The ArticleList feature is slow. Help me understand why."
-
-Claude:
-[Uses smith-tca-trace with feature filtering]
-
-tca-trace analyze trace.trace \
-  --feature ArticleListFeature \
-  --mode agent \
-  --format json
-
-I found the bottleneck! Here's what's happening:
-
-📊 ArticleListFeature Performance:
-   • Total Actions: 12
-   • Heavy Effect: loadArticles (3.4 seconds)
-     - Effect-to-action ratio: 45% (high - should be 20-35%)
-     - Long duration suggests blocking operations
-
-💡 Recommendations:
-   1. The loadArticles effect is blocking - consider async operations
-   2. State mutations happening too frequently (12 changes for 12 actions)
-   3. Add @Dependency for API client to enable better testing
-```
-
-#### Example 4: Architecture Review
-
-```
-You: "Is my TCA implementation well-structured?"
-
-Claude:
-[Analyzes trace for architecture patterns]
-
-Based on your trace analysis:
-
-✅ Good Patterns:
-   • Effect-to-action ratio of 28% (within healthy range 20-35%)
-   • State changes properly batched
-   • Good separation of concerns between features
-
-⚠️ Areas for Improvement:
-   • Some features have overlapping effects (state coupling)
-   • High variance in action duration (suggests inconsistent patterns)
-   • Three effects running in parallel (potential race conditions)
-
-🎯 Next Steps:
-   Ask @maxwell about TCA patterns for:
-   • Shared state management best practices
-   • Proper effect cancellation patterns
-   • Dependency injection strategies
-```
-
-### Progressive Disclosure with Claude Code
-
-smith-tca-trace implements smart token usage:
-
-**Step 1**: Get Summary (Compact - ~200 tokens)
-```
-Claude analyzes and shows: Top 5 slow actions, complexity score, key metrics
-```
-
-**Step 2**: Request Details (Agent Mode - ~2000 tokens)
-```
-You: "Show me all the details for ArticleList feature"
-Claude: Full JSON with every action, effect, and recommendation
-```
-
-**Step 3**: Generate Visual Report (HTML)
-```
-You: "Create an interactive dashboard"
-Claude: Generates HTML with charts, timeline, and recommendations
-```
-
----
-
-## 🔗 Smith Tools Integration
-
-smith-tca-trace is a **performance measurement tool** - it's separate from Maxwell's pattern teaching domain.
-
-### Proper Domain Usage
-
-```
-Scenario: "My app is slow"
-
-Step 1: User invokes smith-tca-trace (directly or in Claude Code)
-$ tca-trace analyze trace.trace
-→ Returns: complexity score, slow actions, performance data
-
-Step 2: User asks Maxwell for pattern guidance
-You: "@maxwell how do I optimize these slow effects?"
-Maxwell: "Here are TCA patterns for..."
-
-Step 3: (Optional) User asks Smith for architecture validation
-You: "@smith validate my architecture"
-Smith: "Checking performance against guidelines..."
-```
-
-### With Smith Agent (for validation)
-
-```
-Smith can invoke smith-tca-trace when validating architecture:
-$ tca-trace analyze trace.trace --mode agent --format json
-[Smith uses metrics: complexity, effect-to-action ratio, state mutations]
-[Smith validates against composition guidelines]
-"Guideline 1.2: dependency management needs improvement"
-```
-
-### Direct Usage via CLI/Automation
-
-```bash
-# Extract complexity score for monitoring
-tca-trace analyze trace.trace --mode agent --format json | jq '.metadata.complexityScore'
-
-# Save daily analysis
-tca-trace analyze trace.trace --save --name "daily-$(date +%Y%m%d)"
-
-# Batch reporting
-for trace in traces/*.trace; do
-  tca-trace analyze "$trace" --output "reports/$(basename $trace .trace).html"
-done
-```
-
----
-
-## 💡 Best Practices
-
-### Recording TCA Traces
-
-**Do**:
-- Use **Time Profiler** template (includes signpost data)
-- Record for 30-60 seconds of typical app usage
-- Record both success and error cases
-- Use meaningful app names in trace metadata
-
-**Don't**:
-- Use **System Trace** template (different data format)
-- Record very short sessions (<5 seconds)
-- Record idle app time (no meaningful signposts)
-- Use generic filenames like "trace" or "test"
-
-### Analyzing Results
-
-**For Performance Investigation**:
-1. Start with compact mode (get the summary)
-2. Filter to slow actions if >5 found
-3. Use agent mode only if needed for details
-4. Generate HTML dashboard for visual confirmation
-
-**For Regression Detection**:
-1. Compare against known baseline
-2. Look for >20% regression threshold
-3. Investigate new slow actions first
-4. Check if improvements came with regressions
-
-**For Architecture Review**:
-1. Check effect-to-action ratio (optimal: 20-35%)
-2. Look for state mutation patterns
-3. Review complexity score (0-100 scale)
-4. Consider @maxwell for pattern guidance
 
 ## 📊 Output Formats
 
-### Interactive HTML Dashboard (Default)
+### JSON Formats
 
-- **TCA Core Principles Analysis**: State mutations, actions, side effects, dependencies
-- **Effect Duration Comparison**: Visual chart showing effect performance
-- **Action Distribution**: Doughnut chart of TCA action types
-- **Timeline Analysis**: Scatter plot of action density over time
-- **Performance Metrics**: Effect-to-action ratios, complexity scoring
-- **TCA-Specific Recommendations**: Actionable optimization advice
+**Compact (Default)**: Token-optimized for AI agents (30-40% reduction)
+- Only slow actions (>16ms) and long effects (>500ms)
+- Top features by action count
+- Essential metrics and recommendations
 
-### Other Formats
+**User**: Human-friendly with enrichment summaries
+- Slow actions with enrichment details
+- Top features with performance metrics
+- Formatted durations and readable summaries
 
-- **JSON** (`--mode agent`): Complete structured data for automation
-- **Markdown** (`--format markdown`): Human-readable reports
-- **Compact JSON**: Optimized for AI agents (30-40% token reduction)
+**Agent**: Complete structured data
+- All actions, effects, and state changes
+- Full enrichment data
+- Detailed metrics and analysis
+
+### Markdown Format
+
+Human-readable reports with enrichment:
+```markdown
+# TCA Analysis: MyApp
+Score: 33/100 | Actions: 128 (10 slow) | Avg: 97.9ms
+
+Slow Actions:
+• ReadingLibrary.reader(.task): 7462.2ms | CPU: Timer Fired(42%), Wait: kevent | Alloc: +32.0 KB
+• ReadingLibrary.reader(.cacheLoaded): 3023.1ms | CPU: Running(85%), Wait: cpu | Alloc: +64.5 KB
+```
+
+### HTML Visualization
+
+Interactive dashboards with:
+- Performance metrics overview
+- Action and effect analysis
+- Enrichment data visualization
+- Timeline and distribution charts
 
 ## 🔬 Multi-Instrument Data Enrichment
 
-### Automatic Correlation
+smith-tca-trace automatically extracts and correlates data from multiple Instruments when available:
 
-smith-tca-trace automatically extracts and correlates data from multiple Instruments:
-
-**Time Profiler** → CPU Thread States
+### Time Profiler → CPU Thread States
 - Extracts thread states (Running, Blocked, etc.) for each TCA action/effect
 - Shows CPU vs I/O-bound operations
-- Displays as "CPU: Running(100%)" in reports
+- Identifies dominant thread states
 
-**System Call Trace** → I/O Wait States
+### System Call Trace → I/O Wait States
 - Identifies blocking system calls (kevent, futex, read, write, mach_msg)
 - Classifies dominant wait types per action
 - Helps identify I/O vs CPU bottlenecks
 
-**Allocations** → Memory Impact
+### Allocations → Memory Impact
 - Tracks memory allocated/freed during actions
 - Computes delta per time window
 - Shows memory pressure correlation with slow actions
 
-### Example Output
+### Enrichment Example Output
 
+```json
+{
+  "slowActions": [{
+    "feature": "ReadingLibrary",
+    "action": "reader(.task)",
+    "duration": "7462.2",
+    "enrichment": {
+      "topSymbols": [
+        {"symbol": "Timer Fired", "percent": 42.1},
+        {"symbol": "Running", "percent": 35.8}
+      ],
+      "waitState": "kevent",
+      "allocationDelta": 32768,
+      "summary": "CPU: Timer Fired(42%), Wait: kevent | Alloc: +32.0 KB"
+    }
+  }]
+}
 ```
-## 🐌 Slow Actions (>16ms)
-
-- **ReadingLibrary.onAppear**: 7462.2ms | CPU: Running(100%)
-- **ReadingLibrary.reader(.task)**: 3023.1ms | CPU: Running(100%)
-- **ReadingLibrary.reader(.cacheLoaded)**: 617.7ms | CPU: Running(100%)
-```
-
-The enrichment fields include:
-- **topSymbols**: Top CPU thread states with percentages
-- **waitState**: Classification of I/O blocks (cpu, kevent, read, write, etc.)
-- **allocationDelta**: Net memory change during execution
 
 ### Using Enrichment Data
 
@@ -524,20 +331,70 @@ The enrichment fields include:
 - Implement object pooling
 - Check for memory leaks
 
+## 🔧 Commands
+
+### `analyze` (default)
+Analyze trace and generate performance report
+```bash
+smith-tca-trace analyze [<trace-path>] [options]
+  -f, --format <format>     Output format: json, markdown, html
+  -m, --mode <mode>         Output mode: user, agent, compact
+  --feature <feature>       Filter by feature name
+  --filter <filter>         Filter by action name
+  --subsystem <subsystem>   App subsystem filter
+  --slow-only              Show only slow actions (>16ms)
+  --min-duration <time>    Minimum duration filter (seconds)
+  -s, --save               Save analysis for later comparison
+  --name <name>            Name for saved analysis
+  --tags <tags>            Tags for saved analysis
+  --output <file>          Output file path
+  --open                   Open HTML output in browser
+  -v, --verbose            Verbose output
+  --summary-only           Ultra-compact summary (~50 tokens)
+  --no-summary             Suppress summary section
+```
+
+### `visualize`
+Generate HTML visualizations
+```bash
+smith-tca-trace visualize <input> [--type <type>] [--output <file>] [--open]
+  --type <type>            Visualization type: interactive, comparison
+  --output <file>          Output HTML file path
+  --open                   Open HTML in browser automatically
+```
+
+### `compare`
+Compare two traces side-by-side
+```bash
+smith-tca-trace compare <before-trace> <after-trace>
+```
+
+### `history` / `list`
+List and search saved analyses
+```bash
+smith-tca-trace history [--tag <tag>] [--name <name>]
+```
+
+### `delete`
+Delete saved analyses
+```bash
+smith-tca-trace delete [--all] [--tag <tag>] [--name <name>]
+```
+
+### `stats`
+Show storage statistics
+```bash
+smith-tca-trace stats
+```
+
 ## 🎯 TCA Insights
 
-### State Analysis
-- **State Mutations**: Track and categorize state changes
-- **Effect Monitoring**: Identify long-running and heavy effects
-- **Dependency Analysis**: Effect-to-action ratios and patterns
-
 ### Performance Metrics
-- **Action Distribution**: UI Events, Data Loading, State Mutations, Navigation
-- **Effect Performance**: Duration comparison and bottleneck identification
-- **Complexity Scoring**: Architecture health assessment
-- **Frame Budget**: Animation and UI responsiveness analysis
-- **CPU/Wait Classification**: Understanding bottleneck type (CPU vs I/O)
-- **Memory Tracking**: Correlation between actions and allocations
+- **Action Analysis**: Duration distribution, slow action identification
+- **Effect Analysis**: Long-running effects (>500ms), effect-to-action ratios
+- **Complexity Scoring**: Architecture health assessment (0-100 scale)
+- **Multi-Instrument Correlation**: CPU, memory, and I/O profiling data
+- **Feature Performance**: Per-feature analysis and comparison
 
 ### Recommendations
 - **@Dependency Usage**: Heavy effect optimization suggestions
@@ -547,126 +404,44 @@ The enrichment fields include:
 - **Threading**: Offload I/O-bound operations to background
 - **Memory**: Optimize allocations in hot paths
 
-## 🔧 Commands
-
-### `analyze`
-Analyze trace and generate performance report
-```bash
-smith-tca-trace analyze <trace-file> [options]
-  --mode <user|agent>       Output format
-  --format <json|html|md>   Output format
-  --output <file>          Output file path
-  --no-recommendations     Skip recommendations
-```
-
-### `visualize`
-Generate interactive HTML dashboard
-```bash
-smith-tca-trace visualize <trace-file> --output <report.html>
-```
-
-### `compare`
-Compare two traces side-by-side
-```bash
-smith-tca-trace compare <before-trace> <after-trace> --output comparison.html
-```
-
-### `list`
-List available traces
-```bash
-smith-tca-trace list [--recent] [--count <number>]
-```
-
-### `stats`
-Show trace statistics
-```bash
-smith-tca-trace stats <trace-file>
-```
-
 ## 🏗️ Architecture
 
 ### Core Components
-
 - **SignpostExtractor**: Extract TCA signposts from Instruments traces
-- **TraceParser**: Parse and validate trace data
+- **TraceParser**: Parse and validate trace data with multi-instrument support
+- **MultiInstrumentParser**: Robust XMLParser-based parsing for profiler, syscall, and allocation data
+- **InstrumentEnrichmentService**: Correlate multi-instrument data with TCA actions/effects
 - **ComplexityScorer**: Calculate architecture complexity metrics
 - **RecommendationEngine**: Generate TCA-specific optimization advice
-- **HTMLFormatter**: Create interactive web visualizations
+- **OutputFormatters**: JSON, Markdown, and HTML output generation
 
-### Generic TCA Detection
-
-The tool uses pattern-based detection to work with any TCA application:
-
-```swift
-// Extract action names from signpost patterns
-let bracketPattern = #"\[([^\]]+)\].*?(\w+Feature)\.Action\.([\w.()]+)"#
-let effectPattern = #"(?:Output from|Started from)\s+.*?(\w+Feature)\.Action\.([\w.()]+)"#
-```
-
-### UI Technology Stack
-
-- **Svelte**: Reactive component framework
-- **Chart.js**: Advanced data visualization
-- **Vite**: Fast build tool
-- **CSS Grid/Flexbox**: Modern responsive layouts
-
-## 📈 Performance Features
-
-### Action Classification
-- **UI Events**: User interactions (tapped, selected, changed)
-- **Data Loading**: Effects, fetch operations, background tasks
-- **State Mutations**: Direct state updates and changes
-- **Navigation**: Route and view management actions
-
-### Effect Analysis
-- **Duration Tracking**: Microsecond precision timing
-- **Long-Running Detection**: >500ms threshold alerts
-- **Performance Bottlenecks**: Critical effect identification
-- **Cancellation Issues**: Missing .cancellable() detection
-
-### Architecture Insights
-- **Effect-to-Action Ratio**: Balance assessment
-- **Complexity Scoring**: 0-100 health metric
-- **State Change Patterns**: Shared state tracking
-- **Dependency Analysis**: @Dependency optimization opportunities
-
-## 🎨 Dashboard Features
-
-### Visual Elements
-- **Dark Theme**: Optimized for long debugging sessions
-- **Glassmorphism**: Modern blur and transparency effects
-- **Color Coding**: Performance severity indicators
-- **Interactive Charts**: Hover effects and tooltips
-
-### Responsive Design
-- **Mobile Friendly**: Works on tablets during development
-- **Touch Optimized**: Mobile interaction patterns
-- **Adaptive Layout**: Flexible grid system
-
-### Data Visualization
-- **Doughnut Charts**: Action distribution breakdown
-- **Scatter Plots**: Timeline density analysis
-- **Bar Charts**: Effect duration comparison
-- **Progress Metrics**: Real-time performance indicators
+### Multi-Instrument Integration
+- **XCTraceRunner**: Export data from Instruments using xctrace tool
+- **Robust Parsing**: XMLParser-based extraction for Time Profiler, System Calls, and Allocations
+- **Time Window Correlation**: Match multi-instrument data to TCA actions/effects
+- **Smart Filtering**: Only enrich slow actions (>16ms) and long effects (>500ms)
 
 ## 🔄 Workflow Integration
 
-### Development
+### Development Workflow
 ```bash
-# Integrate into CI/CD
-smith-tca-trace analyze build.trace --mode agent --output metrics.json
-
 # Performance regression testing
-smith-tca-trace compare baseline.trace current.trace --threshold 0.1
+smith-tca-trace compare baseline.trace current.trace
+
+# Feature-specific analysis
+smith-tca-trace analyze trace.trace --feature MyFeature
+
+# Save analysis for tracking
+smith-tca-trace analyze trace.trace --save --name "daily-$(date +%Y%m%d)"
 ```
 
-### Monitoring
+### CI/CD Integration
 ```bash
-# Continuous performance monitoring
-smith-tca-trace stats production.trace --format json | jq '.complexityScore'
+# Automated performance analysis
+smith-tca-trace analyze build.trace --mode agent --output metrics.json
 
-# Automated reporting
-smith-tca-trace visualize daily.trace --output reports/daily-$(date +%Y%m%d).html
+# Complexity score monitoring
+smith-tca-trace stats | jq '.totalAnalyses'
 ```
 
 ## 🐛 Troubleshooting
@@ -678,86 +453,47 @@ smith-tca-trace visualize daily.trace --output reports/daily-$(date +%Y%m%d).htm
 - Check that signposts follow Point-Free's naming conventions
 - Verify trace contains `[FeatureName] Feature.Action.actionName` patterns
 
-**Empty visualization:**
+**No multi-instrument data:**
+- Ensure trace was recorded with multiple instruments (Time Profiler + System Calls + Allocations)
+- Check that instruments were enabled during recording
+- Verify trace file contains the required data schemas
+
+**Empty analysis:**
 - Check trace file path and permissions
 - Ensure trace was recorded with Time Profiler template
 - Verify xctrace tool is accessible
 
 **Performance issues:**
 - Large traces (>1GB) may require additional processing time
-- Use `--no-recommendations` for faster analysis
-- Consider filtering specific time ranges
+- Use `--slow-only` for faster analysis of large traces
+- Consider filtering specific features or time ranges
 
 ### Debug Mode
 
 ```bash
-# Enable verbose logging
-RUST_LOG=debug smith-tca-trace analyze trace.trace
+# Verbose output
+smith-tca-trace analyze trace.trace --verbose
 
-# Check trace contents
-smith-tca-trace list --details trace.trace
+# Check what instruments are available
+xctrace export --input trace.trace --toc
 ```
 
-## 📚 Examples
+## 🔮 Current Features
 
-### Real-World Analysis
+✅ **Implemented:**
+- Multi-instrument enrichment (CPU, syscalls, allocations)
+- Compact, user, and agent output modes
+- HTML visualization with interactive charts
+- Analysis management (save, compare, history)
+- Feature-specific filtering
+- Progressive disclosure for AI agents
+- Subsystem filtering
+- Performance regression detection
 
-```bash
-# Reading Library TCA App Analysis
-smith-tca-trace visualize ReadingLibrary.trace \
-  --output reading-library-perf.html
-
-# Results:
-# - 107 total actions, 17 effects
-# - Critical bottleneck: inspector(.loadData) - 3298ms
-# - Effect-to-action ratio: 33.6% (healthy)
-# - Health score: 87/100 (good architecture)
-# - Recommendation: Implement caching for heavy effects
-```
-
-### Performance Regression
-
-```bash
-# Compare before/after optimization
-smith-tca-trace compare before-optimization.trace after-optimization.trace \
-  --output optimization-results.html
-
-# Typical improvements:
-# - Effect duration reduced by 60%
-# - Complexity score improved from 45 to 32
-# - Effect-to-action ratio optimized to 28%
-```
-
-## 🔮 Future Roadmap
-
-### Planned Features
-- [ ] Real-time monitoring integration
-- [ ] Performance alerting system
-- [ ] Baseline management
-- [ ] Team sharing and collaboration
-- [ ] Integration with CI/CD pipelines
-
-### Technical Improvements
-- [ ] Swift Package Manager distribution
-- [ ] macOS app wrapper
-- [ ] Plug-in architecture for custom analyzers
-- [ ] Export to additional formats (CSV, PDF)
-
-## 🤝 Contributing
-
-### Development Setup
-```bash
-git clone <repository-url>
-cd smith-tca-trace
-swift build
-swift test
-```
-
-### Code Style
-- Follow Swift API Design Guidelines
-- Use comprehensive unit tests
-- Document all public APIs
-- Ensure cross-platform compatibility
+🔧 **Installation:**
+- Homebrew tap available
+- Manual build from source
+- macOS 14+ support
 
 ## 📄 License
 
@@ -768,10 +504,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Point-Free**: TCA signpost instrumentation patterns
 - **Apple Instruments**: Trace data extraction capabilities
 - **Swift ArgumentParser**: CLI framework
-- **Svelte**: Reactive UI framework
-- **Chart.js**: Data visualization library
+- **Multi-instrument enrichment**: Built on Apple's Instruments data schemas
 
 ---
+
+**Built with ❤️ for The Composable Architecture community**
 
 ## 📞 Support
 
@@ -779,43 +516,3 @@ For issues, feature requests, or questions:
 - Create an issue in the GitHub repository
 - Check the troubleshooting section above
 - Review the examples and documentation
-
-**Built with ❤️ for The Composable Architecture community**
-
----
-
-## 📚 Documentation Index
-
-| Document | Purpose |
-|----------|---------|
-| **[QUICK_START.md](QUICK_START.md)** | Command cheat sheet, quick reference |
-| **[README.md](README.md)** | Complete guide, all usage patterns |
-| **[AGENT_INTEGRATION.md](AGENT_INTEGRATION.md)** | How Maxwell/Smith invoke smith-tca-trace |
-| **[Skill/SKILL.md](Skill/SKILL.md)** | Claude Code skill activation |
-
-Quick links:
-- **Just installed?** → [QUICK_START.md](QUICK_START.md)
-- **Need a command?** → [QUICK_START.md](QUICK_START.md) → Quick Commands
-- **Want examples?** → README.md → Usage Workflows
-- **In Claude Code?** → README.md → Claude Code Integration
-- **Agent developer?** → [AGENT_INTEGRATION.md](AGENT_INTEGRATION.md)
-
----
-
-## ✅ Installation Status
-
-After installation, verify everything works:
-
-```bash
-# Check version
-tca-trace --version
-# → Should output: 1.0.0
-
-# Check storage directory
-ls -la ~/.tca-trace/analyses
-# → Should exist and be writable
-
-# Try a test command
-tca-trace --help
-# → Should show all available commands
-```
