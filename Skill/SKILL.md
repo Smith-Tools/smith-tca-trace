@@ -157,17 +157,48 @@ effect lifecycles, shared state changes, and performance metrics.
 **Performance Investigation:**
 ```
 User: "My TCA app feels sluggish, can you help?"
-AI: [Activates tca-trace skill] "I'll analyze your Instruments trace to identify performance bottlenecks."
+Smith: [Activates tca-trace skill] "I'll analyze your Instruments trace to identify performance bottlenecks."
+       [Returns summary with key issues]
+       "For a detailed analysis with full effects breakdown, run: smith-tca-trace analyze --mode user
+        Or ask me: 'Show me the detailed markdown analysis'"
 ```
 
 **Regression Detection:**
 ```
 User: "After the last update, my app is slower"
-AI: [Uses tca-trace] "Let me compare before/after traces to detect what changed."
+Smith: [Uses tca-trace] "Let me compare before/after traces to detect what changed."
+       [Returns comparison summary]
+       "For detailed markdown report, ask: 'Show me the detailed analysis'"
 ```
 
 **Architecture Analysis:**
 ```
 User: "Is this TCA implementation well-structured?"
-AI: [Analyzes trace] "Based on the action flow and state changes, here are some optimization suggestions..."
+Smith: [Analyzes trace] "Based on the action flow and state changes, here are some optimization suggestions..."
+       "For the full effects breakdown and timing details, ask: 'Show me the detailed markdown analysis'"
 ```
+
+## Follow-Up: Getting Detailed Analysis
+
+When Smith provides a summary analysis, you can get the detailed human-friendly markdown by:
+
+**Option 1: Ask Smith directly**
+```
+User: "Show me the detailed markdown analysis"
+Smith: [Re-runs smith-tca-trace with --mode user]
+       [Returns full markdown report with all effects, actions, and recommendations]
+```
+
+**Option 2: Run the tool yourself**
+```bash
+cd /path/to/project
+smith-tca-trace analyze --mode user
+# Returns: Comprehensive markdown with all performance details
+```
+
+The markdown format includes:
+- Complete list of all actions and their timings
+- Full effects breakdown with CPU/I/O classification
+- State change tracking
+- Detailed recommendations
+- Performance metrics summary
