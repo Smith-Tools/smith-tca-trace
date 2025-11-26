@@ -1,10 +1,10 @@
 ---
-name: tca-trace
+name: smith-tca-trace
 description: TCA performance profiling and analysis. Automatically triggers for:
              TCA performance, signposts, Instruments traces, slow reducers,
              effect lifecycle, action timing, TCA optimization
 allowed-tools: [Bash, Read, Write]
-executables: ["./scripts/tca-trace"]
+executables: ["~/.local/bin/smith-tca-trace", "./Scripts/smith-tca-trace", "smith-tca-trace"]
 ---
 
 # TCA Performance Analysis
