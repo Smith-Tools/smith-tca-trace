@@ -4,9 +4,35 @@ import Foundation
 @available(macOS 14, *)
 struct MarkdownFormatter: Sendable {
     /// Format user-friendly markdown with emojis
-    static func formatUserMarkdown(_ analysis: TraceAnalysis) -> String {
+    static func formatUserMarkdown(_ analysis: TraceAnalysis, suppressSummary: Bool = false) -> String {
         let scorer = ComplexityScorer()
         let complexityRating = scorer.getComplexityRating(analysis.complexityScore)
+
+        // Extract worst action
+        let worstAction = analysis.actions.max { $0.duration < $1.duration }
+        let worstActionStr = worstAction.map { "**\($0.fullName)**: \(String(format: "%.1f", $0.durationMS))ms" } ?? "—"
+
+        // Extract worst effect
+        let worstEffect = analysis.effects.max { $0.duration < $1.duration }
+        let worstEffectStr = worstEffect.map { "**\($0.name)**: \(String(format: "%.0f", $0.durationMS))ms" } ?? "—"
+
+        // Count long effects (> 500ms)
+        let longEffectsCount = analysis.effects.filter { $0.isLongRunning }.count
+
+        // Extract top feature (by max action duration)
+        let topFeatureName = analysis.metrics.features
+            .max { (lhs, rhs) in
+                let lhsMaxDuration = analysis.actions
+                    .filter { $0.featureName == lhs.key }
+                    .map { $0.duration }
+                    .max() ?? 0
+                let rhsMaxDuration = analysis.actions
+                    .filter { $0.featureName == rhs.key }
+                    .map { $0.duration }
+                    .max() ?? 0
+                return lhsMaxDuration < rhsMaxDuration
+            }
+            .map { $0.key } ?? "—"
 
         var markdown = """
         # TCA Performance Analysis
@@ -21,6 +47,17 @@ struct MarkdownFormatter: Sendable {
 
         """
 
+        if !suppressSummary {
+            markdown += """
+            ### Key Findings
+            - **🔴 Worst Action**: \(worstActionStr)
+            - **⏱️  Worst Effect**: \(worstEffectStr)
+            - **📌 Long Effects**: \(longEffectsCount) effect(s) >500ms
+            - **🏆 Top Feature**: \(topFeatureName)
+
+            """
+        }
+
         // Slow Actions section
         let slowActions = analysis.actions.filter { $0.isSlowFor60FPS }.sorted { $0.duration > $1.duration }
         if !slowActions.isEmpty {
@@ -29,7 +66,11 @@ struct MarkdownFormatter: Sendable {
 
             """
             for action in slowActions.prefix(10) {
-                markdown += "- **\(action.fullName)**: \(String(format: "%.1f", action.durationMS))ms\n"
+                if action.hasEnrichment {
+                    markdown += "- **\(action.fullName)**: \(String(format: "%.1f", action.durationMS))ms | \(action.enrichmentSummary)\n"
+                } else {
+                    markdown += "- **\(action.fullName)**: \(String(format: "%.1f", action.durationMS))ms\n"
+                }
             }
         }
 
@@ -48,7 +89,11 @@ struct MarkdownFormatter: Sendable {
         if !longEffects.isEmpty {
             markdown += "\n## ⏱️  Long-running Effects (>500ms)\n\n"
             for effect in longEffects.prefix(5) {
-                markdown += "- **\(effect.name)**: \(String(format: "%.0f", effect.durationMS))ms\n"
+                if effect.hasEnrichment {
+                    markdown += "- **\(effect.name)**: \(String(format: "%.0f", effect.durationMS))ms | \(effect.enrichmentSummary)\n"
+                } else {
+                    markdown += "- **\(effect.name)**: \(String(format: "%.0f", effect.durationMS))ms\n"
+                }
             }
         }
 
@@ -76,7 +121,18 @@ struct MarkdownFormatter: Sendable {
     }
 
     /// Format agent-focused markdown (more detailed)
-    static func formatAgentMarkdown(_ analysis: TraceAnalysis) -> String {
+    static func formatAgentMarkdown(_ analysis: TraceAnalysis, suppressSummary: Bool = false) -> String {
+        // Extract worst action
+        let worstAction = analysis.actions.max { $0.duration < $1.duration }
+        let worstActionStr = worstAction.map { "**\($0.fullName)** (\($0.featureName)): \(String(format: "%.3f", $0.duration))s" } ?? "—"
+
+        // Extract worst effect
+        let worstEffect = analysis.effects.max { $0.duration < $1.duration }
+        let worstEffectStr = worstEffect.map { "**\($0.name)**: \(String(format: "%.3f", $0.duration))s" } ?? "—"
+
+        // Count long effects (> 500ms)
+        let longEffectsCount = analysis.effects.filter { $0.isLongRunning }.count
+
         var markdown = """
         # TCA Performance Analysis (Agent Mode)
 
@@ -87,6 +143,19 @@ struct MarkdownFormatter: Sendable {
         - **Duration**: \(String(format: "%.3f", analysis.duration))s
         - **Complexity Score**: \(String(format: "%.1f", analysis.complexityScore))/100
 
+        """
+
+        if !suppressSummary {
+            markdown += """
+            ## Summary
+            - **Worst Action**: \(worstActionStr)
+            - **Worst Effect**: \(worstEffectStr)
+            - **Long Effects**: \(longEffectsCount) effect(s) >500ms
+
+            """
+        }
+
+        markdown += """
         ## Performance Metrics
         - **Total Actions**: \(analysis.metrics.totalActions)
         - **Slow Actions**: \(analysis.metrics.slowActions) (\(String(format: "%.1f", (Double(analysis.metrics.slowActions) / Double(max(analysis.metrics.totalActions, 1))) * 100))%)
@@ -132,7 +201,11 @@ struct MarkdownFormatter: Sendable {
         """
 
         for action in slowActions {
-            markdown += "\n• \(action.fullName): \(String(format: "%.1f", action.durationMS))ms"
+            if action.hasEnrichment {
+                markdown += "\n• \(action.fullName): \(String(format: "%.1f", action.durationMS))ms | \(action.enrichmentSummary)"
+            } else {
+                markdown += "\n• \(action.fullName): \(String(format: "%.1f", action.durationMS))ms"
+            }
         }
 
         if !topFeatures.isEmpty {

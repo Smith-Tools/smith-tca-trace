@@ -17,10 +17,18 @@ enum OutputFormat: String, CaseIterable, ExpressibleByArgument {
 
 @available(macOS 14, *)
 struct OutputFormatter: Sendable {
-    static func format(_ analysis: TraceAnalysis, mode: OutputMode, format: OutputFormat) -> String {
+    static func format(_ analysis: TraceAnalysis, mode: OutputMode, format: OutputFormat, summaryOnly: Bool = false, noSummary: Bool = false) -> String {
+        // Handle --summary-only flag (ultra-compact, ~50 tokens)
+        if summaryOnly {
+            return formatSummaryOnly(analysis)
+        }
+
+        // Handle --no-summary flag
+        let suppressSummary = noSummary
+
         switch (mode, format) {
         case (.user, .markdown):
-            return MarkdownFormatter.formatUserMarkdown(analysis)
+            return MarkdownFormatter.formatUserMarkdown(analysis, suppressSummary: suppressSummary)
         case (.agent, .json):
             return JSONFormatter.formatFullAgentJSON(analysis)
         case (.compact, .json):
@@ -30,12 +38,42 @@ struct OutputFormatter: Sendable {
         case (.user, .json):
             return JSONFormatter.formatUserJSON(analysis)
         case (.agent, .markdown):
-            return MarkdownFormatter.formatAgentMarkdown(analysis)
+            return MarkdownFormatter.formatAgentMarkdown(analysis, suppressSummary: suppressSummary)
         case (.compact, .markdown):
             return MarkdownFormatter.formatCompactMarkdown(analysis)
         default:
-            return formatDefault(analysis, mode: mode, format: format)
+            return formatDefault(analysis, mode: mode, format: format, suppressSummary: suppressSummary)
         }
+    }
+
+    /// Ultra-compact summary-only format (~50 tokens)
+    private static func formatSummaryOnly(_ analysis: TraceAnalysis) -> String {
+        let worstAction = analysis.actions.max { $0.duration < $1.duration }
+        let worstEffect = analysis.effects.max { $0.duration < $1.duration }
+        let longEffectsCount = analysis.effects.filter { $0.isLongRunning }.count
+
+        let summary: [String: Any] = [
+            "app": analysis.metadata.name,
+            "complexity": Int(analysis.complexityScore),
+            "totalActions": analysis.actions.count,
+            "slowActions": analysis.metrics.slowActions,
+            "longEffects": longEffectsCount,
+            "duration": Double(Int(analysis.duration * 10)) / 10,
+            "worstAction": worstAction.map { [
+                "feature": $0.featureName,
+                "action": $0.actionName,
+                "duration": Double(Int($0.duration * 1000))
+            ] } as Any,
+            "worstEffect": worstEffect.map { [
+                "name": $0.name,
+                "duration": Double(Int($0.duration * 1000))
+            ] } as Any
+        ]
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = []
+        let data = try! JSONSerialization.data(withJSONObject: summary, options: [])
+        return String(data: data, encoding: .utf8)!
     }
 
     static func format(_ comparison: ComparisonResult, mode: OutputMode, format: OutputFormat) -> String {
@@ -45,16 +83,17 @@ struct OutputFormatter: Sendable {
         case (.agent, .json), (.compact, .json):
             return JSONFormatter.formatComparisonJSON(comparison)
         default:
-            return formatComparisonDefault(comparison, mode: mode, format: format)
+            // Fallback: use markdown when HTML view is not available
+            return MarkdownFormatter.formatComparisonMarkdown(comparison)
         }
     }
 
-    private static func formatDefault(_ analysis: TraceAnalysis, mode: OutputMode, format: OutputFormat) -> String {
+    private static func formatDefault(_ analysis: TraceAnalysis, mode: OutputMode, format: OutputFormat, suppressSummary: Bool = false) -> String {
         switch format {
         case .json:
             return JSONFormatter.formatCompactAgentJSON(analysis)
         case .markdown:
-            return MarkdownFormatter.formatUserMarkdown(analysis)
+            return MarkdownFormatter.formatUserMarkdown(analysis, suppressSummary: suppressSummary)
         case .html:
             return HTMLFormatter.generateInteractiveHTML(analysis)
         }
@@ -64,10 +103,8 @@ struct OutputFormatter: Sendable {
         switch format {
         case .json:
             return JSONFormatter.formatComparisonJSON(comparison)
-        case .markdown:
+        case .markdown, .html:
             return MarkdownFormatter.formatComparisonMarkdown(comparison)
-        case .html:
-            return HTMLFormatter.generateComparisonHTML(comparison)
         }
     }
 }

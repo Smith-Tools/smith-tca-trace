@@ -24,8 +24,14 @@ struct TCAAction: Codable, Sendable, Identifiable {
     let duration: Double        // seconds
     let metadata: String?       // Additional info
 
+    // Multi-instrument enrichment fields (optional)
+    var topSymbols: [CPUSymbol] = []
+    var waitState: String = ""
+    var allocationDelta: Int64 = 0
+
     private enum CodingKeys: String, CodingKey {
         case featureName, actionName, timestamp, duration, metadata
+        case topSymbols, waitState, allocationDelta
     }
 
     var fullName: String {
@@ -38,6 +44,42 @@ struct TCAAction: Codable, Sendable, Identifiable {
 
     var durationMS: Double {
         duration * 1000
+    }
+
+    var hasEnrichment: Bool {
+        !topSymbols.isEmpty || !waitState.isEmpty || allocationDelta != 0
+    }
+
+    var enrichmentSummary: String {
+        var parts: [String] = []
+
+        if !topSymbols.isEmpty {
+            parts.append("CPU: \(topSymbols.prefix(3).map { "\($0.symbolName)(\(String(format: "%.0f", $0.percent))%)" }.joined(separator: ", "))")
+        }
+
+        if !waitState.isEmpty && waitState != "cpu" {
+            parts.append("Wait: \(waitState)")
+        }
+
+        if allocationDelta != 0 {
+            let sign = allocationDelta > 0 ? "+" : ""
+            let formatter = ByteCountFormatter()
+            parts.append("Alloc: \(sign)\(formatter.string(fromByteCount: allocationDelta))")
+        }
+
+        return parts.joined(separator: " | ")
+    }
+}
+
+/// CPU symbol information from profiler enrichment
+struct CPUSymbol: Codable, Sendable, Identifiable {
+    let id = UUID()
+    let symbolName: String
+    let moduleName: String?
+    let percent: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case symbolName, moduleName, percent
     }
 }
 
@@ -52,6 +94,11 @@ struct TCAEffect: Codable, Sendable, Identifiable {
         endTime - startTime
     }
 
+    // Multi-instrument enrichment fields (optional)
+    var topSymbols: [CPUSymbol] = []
+    var waitState: String = ""
+    var allocationDelta: Int64 = 0
+
     var durationMS: Double {
         duration * 1000
     }
@@ -60,8 +107,33 @@ struct TCAEffect: Codable, Sendable, Identifiable {
         duration > 0.5  // 500ms threshold
     }
 
+    var hasEnrichment: Bool {
+        !topSymbols.isEmpty || !waitState.isEmpty || allocationDelta != 0
+    }
+
+    var enrichmentSummary: String {
+        var parts: [String] = []
+
+        if !topSymbols.isEmpty {
+            parts.append("CPU: \(topSymbols.prefix(3).map { "\($0.symbolName)(\(String(format: "%.0f", $0.percent))%)" }.joined(separator: ", "))")
+        }
+
+        if !waitState.isEmpty && waitState != "cpu" {
+            parts.append("Wait: \(waitState)")
+        }
+
+        if allocationDelta != 0 {
+            let sign = allocationDelta > 0 ? "+" : ""
+            let formatter = ByteCountFormatter()
+            parts.append("Alloc: \(sign)\(formatter.string(fromByteCount: allocationDelta))")
+        }
+
+        return parts.joined(separator: " | ")
+    }
+
     private enum CodingKeys: String, CodingKey {
         case name, featureName, startTime, endTime
+        case topSymbols, waitState, allocationDelta
     }
 }
 
