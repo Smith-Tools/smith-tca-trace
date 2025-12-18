@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "smith-tca-trace",
-    platforms: [.macOS(.v14)],  // macOS 14+ for modern Swift 6 features
+    platforms: [.macOS(.v15)],  // macOS 15+ for modern Swift 6 features
     products: [
         .executable(name: "smith-tca-trace", targets: ["TCATrace"])
     ],
